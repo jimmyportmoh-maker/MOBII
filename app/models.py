@@ -14,6 +14,7 @@ class ProviderProfile(Base):
     __tablename__="providers"; id=pk()
     user_id=Column(Integer,ForeignKey("users.id")); business_name=Column(String(200)); address=Column(String(300))
     service_area=Column(String(300)); payout_info=Column(String(300),default=""); service_ids=Column(String(500),default="")
+    profile_photo_path=Column(String(400),default=""); profile_photo_filename=Column(String(300),default="")
     verification_status=Column(String(30),default="pending")  # pending|under_review|more_info|approved|rejected|expired|suspended|blocked
     verification_note=Column(Text,default=""); created_at=now()
 class VerificationDoc(Base):
