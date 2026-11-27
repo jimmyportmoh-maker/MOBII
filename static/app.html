@@ -9,6 +9,23 @@ button{background:var(--pri);color:#fff;border:0;cursor:pointer}button.d{backgro
 .t{background:var(--bg);padding:2px 8px;border-radius:10px;font-size:13px;border:1px solid var(--line)}label{display:block;margin:2px 0}
 </style></head><body>
 <header><b>MOBI HUB</b><span id="who"></span></header><div class="w" id="view"></div>
+<div id="supportWidget" style="position:fixed;right:16px;bottom:16px;z-index:9999">
+ <div id="supportPanel" class="c" style="display:none;width:min(340px,calc(100vw - 32px));max-height:70vh;overflow:auto;box-shadow:0 8px 28px #0003">
+  <div style="display:flex;justify-content:space-between;align-items:center"><h3 style="margin:4px 0">MOBI HUB Support</h3><button class="l" onclick="toggleSupport(false)">Close</button></div>
+  <p>How can we help? Choose a support topic and contact our team.</p>
+  <label for="supportTopic">Support topic</label>
+  <select id="supportTopic" style="width:100%">
+   <option>Provider verification and approval</option><option>Registration and login</option><option>Booking and provider selection</option><option>Payments and M-Pesa</option><option>Complaints and disputes</option><option>Account or technical problem</option>
+  </select>
+  <p><b>Help centre</b></p>
+  <ul><li><b>Registration:</b> create an account and sign in using your email.</li><li><b>Provider verification:</b> upload the required document and submit your business profile; wait for admin approval.</li><li><b>Bookings:</b> customers submit a request, select a verified provider, and wait for the provider to accept.</li><li><b>Payments:</b> follow the payment instructions shown in your completed booking. A submitted M-Pesa code is not confirmed until checked.</li><li><b>Complaints:</b> contact support with your booking ID and a short explanation.</li></ul>
+  <p><b>WhatsApp:</b> 0181413473<br><b>Call:</b> 0181413473<br><b>Email:</b> jimmyportmoh@gmail.com</p>
+  <button style="width:100%" onclick="contactSupport('whatsapp')">Continue to WhatsApp support</button>
+  <button class="l" style="width:100%" onclick="contactSupport('email')">Email support</button>
+  <button class="l" style="width:100%" onclick="contactSupport('call')">Call support</button>
+ </div>
+ <button id="supportToggle" onclick="toggleSupport()" style="border-radius:24px;padding:12px 18px;box-shadow:0 4px 16px #0003">Help &amp; Support</button>
+</div>
 <script>
 let T=localStorage.mhp;const $=i=>document.getElementById(i),view=$('view');
 const h=s=>String(s??'').replace(/[&<>"']/g,c=>'&#'+c.charCodeAt(0)+';');
@@ -65,7 +82,7 @@ function customerCard(v){
  if(last&&b.status!=='completed')x+=`<p>Payment: ${h(ST[last.status]||last.status)}</p>`;
  return x+'</div>';
 }
-async function chooseProvider(id,pid){const d=await api(`bookings/${id}/select-provider`,'POST',{provider_id:pid});if(d){alert(d.email_sent?'Request sent. An email notification was delivered to the provider.':'Request sent and saved. The provider can see it in their dashboard, but the email notification was not sent.');customer();}}
+async function chooseProvider(id,pid){const d=await api(`bookings/${id}/select-provider`,'POST',{provider_id:pid});if(d){alert('Request sent and saved. The provider can see it in their dashboard.');customer();}}
 async function paySend(id){
  const amount=+$('amt'+id).value, receipt=$('ref'+id).value.trim();
  if(!amount||!receipt)return alert('Enter the agreed amount and M-Pesa confirmation code.');
@@ -128,5 +145,13 @@ function job(v){let b=v.booking,e=v.escrow,x=`<div class=c><b>#${b.id} ${h(v.ser
 if(e.status=='funded')x+=`<p>Customer has paid; funds are safe in escrow. Do the job, then:</p><button onclick="dlv(${e.id})">Mark as delivered</button>`;
 if(e.status=='awaiting_payment')x+=`<p>Wait for the customer's payment before starting.</p>`;return x+'</div>'}
 async function dlv(id){if(await api(`escrow/${id}/deliver`,'POST',{}))provider()}
+function toggleSupport(force){const panel=$('supportPanel');const show=typeof force==='boolean'?force:panel.style.display==='none';panel.style.display=show?'block':'none';$('supportToggle').style.display=show?'none':'block';}
+function contactSupport(method){
+ const topic=$('supportTopic').value;
+ const message=encodeURIComponent('MOBI HUB support request: '+topic+'\\nPlease assist me. I can provide my booking ID if needed.');
+ if(method==='whatsapp')window.open('https://wa.me/254181413473?text='+message,'_blank','noopener');
+ if(method==='email')window.location.href='mailto:jimmyportmoh@gmail.com?subject='+encodeURIComponent('MOBI HUB Support - '+topic)+'&body='+message;
+ if(method==='call')window.location.href='tel:+254181413473';
+}
 boot();
 </script></body></html>
