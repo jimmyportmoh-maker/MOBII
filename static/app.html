@@ -43,32 +43,45 @@ async function pay(id){if(await api(`escrow/${id}/pay`,'POST',{ref:$('r'+id).val
 async function act(id,a){if(await api(`escrow/${id}/${a}`,'POST',{}))boot()}
 async function disp(id){let n=prompt('Describe the problem:');if(n&&await api(`escrow/${id}/dispute`,'POST',{note:n}))customer()}
 // ---------- provider
-async function provider(){let [d,sv]=await Promise.all([api('provider/me'),api('services')]);if(!d)return;let p=d.profile,mine=(p.service_ids||'').split(',');
-view.innerHTML=`<div class=c><h3>Verification: <span class=t>${h(p.verification_status.replace('_',' '))}</span></h3>${p.verification_note?`<p><b>Message from admin:</b> ${h(p.verification_note)}</p>`:''}
-<p>Upload a clear photo or scan of your National ID or passport, plus licences if your service needs them. JPG, PNG or PDF, max 8 MB. Files are private: only verification staff can open them.</p>
-<select id=dtp>${d.doc_types.map(t=>`<option>${h(t)}</option>`).join('')}</select> <input id=df type=file accept=".jpg,.jpeg,.png,.pdf"> <button onclick="upl()">Upload</button>
-<ul>${d.docs.map(x=>`<li>${h(x.doc_type)} – ${h(x.filename)}</li>`).join('')||'<li>Nothing uploaded yet</li>'}</ul></div>
-<div class=c><h3>Business profile</h3><input id=pb placeholder="Business name" value="${h(p.business_name)}"><br><input id=pa placeholder=Address value="${h(p.address)}"><br>
-<input id=pr placeholder="Service area" value="${h(p.service_area)}"><br><input id=po placeholder="Payout details (M-Pesa number or bank account)" value="${h(p.payout_info)}" style="width:100%"><p>Services you offer:</p>
-${sv.map(s=>`<label><input type=checkbox class=sc value=${s.id} ${mine.includes(String(s.id))?'checked':''}> ${h(s.name)}</label>`).join('')}<button onclick="save()">Save profile</button></div>
-<h3>My jobs</h3>${d.jobs.map(job).join('')||'<p>No jobs yet. Jobs appear once you are verified and a customer books you.</p>'}`}
+async function provider(){
+ let [d,sv]=await Promise.all([api('provider/me'),api('services')]);
+ if(!d)return;
+ const p=d.profile, docs=d.docs||[], offers=d.offers||[];
+ const hasId=docs.some(x=>['National ID','Passport'].includes(x.doc_type));
+ const status=p.verification_status;
+ const docsList=docs.map(x=>'<li>'+h(x.doc_type)+' – '+h(x.filename)+'</li>').join('')||'<li>No documents uploaded yet</li>';
+ if(status==='approved'){
+  view.innerHTML=`<div class=c><h3>Provider verified</h3><p>Your profile has been approved. You can now publish the services you offer and add photos.</p><p><b>Business:</b> ${h(p.business_name)}</p></div>
+  <div class=c><h3>Publish a service</h3><label>Choose service</label><select id=offerService>${sv.map(s=>`<option value=${s.id}>${h(s.name)}</option>`).join('')}</select><label>Describe what you offer</label><textarea id=offerDescription rows=3 placeholder="Describe your service"></textarea><label>Service photo (JPG or PNG, max 8 MB)</label><input id=offerPhoto type=file accept=".jpg,.jpeg,.png"><button onclick="publishService()">Publish service</button></div>
+  <div class=c><h3>Your published services</h3>${offers.map(o=>`<div style="padding:8px 0;border-bottom:1px solid var(--line)"><b>${h(o.service)}</b><p>${h(o.description)}</p><small>Photo: ${h(o.photo_filename)}</small></div>`).join('')||'<p>You have not published any services yet.</p>'}</div>
+  <h3>My jobs</h3>${d.jobs.map(job).join('')||'<p>No jobs yet.</p>'}`;
+  return;
+ }
+ if(status==='under_review' && hasId){
+  view.innerHTML=`<div class=c style="text-align:center;padding:28px 16px"><h2>Profile submitted</h2><p>Your provider profile and ID document are waiting for verification by the MOBI HUB team.</p><h3>Current status: Under review</h3><p>You cannot publish services or upload service photos until your profile is approved.</p><p>We will update this page when the verification status changes.</p></div><div class=c><h3>Submitted documents</h3><ul>${docsList}</ul></div>`;
+  return;
+ }
+ const note=p.verification_note?`<p><b>Admin message:</b> ${h(p.verification_note)}</p>`:'';
+ view.innerHTML=`<div class=c><h3>${status==='more_info'?'More information required':status==='rejected'?'Profile needs changes':'Complete provider registration'}</h3>${note}<p>1. Upload your National ID or passport. 2. Complete your business profile and payout details. 3. Submit once. The profile form will close and your account will wait for verification.</p><label>ID document type</label><select id=dtp>${d.doc_types.map(t=>`<option>${h(t)}</option>`).join('')}</select><label>Choose ID file (JPG, PNG or PDF, max 8 MB)</label><input id=df type=file accept=".jpg,.jpeg,.png,.pdf"><button onclick="upl()">Upload ID document</button><ul>${docsList}</ul></div>
+ <div class=c><h3>Business profile</h3><label>Business name</label><input id=pb placeholder="Business name" value="${h(p.business_name)}"><label>Business address</label><input id=pa placeholder="Address" value="${h(p.address)}"><label>Service area</label><input id=pr placeholder="e.g. Kisumu County or Country wide" value="${h(p.service_area)}"><label>Payout details (M-Pesa number or bank account)</label><input id=po placeholder="Payout details" value="${h(p.payout_info)}" style="width:100%"><button onclick="save()">Submit profile for verification</button></div>`;
+}
 async function upl(){
  const file=$('df')?.files?.[0];
  if(!file)return alert('Choose your ID file first.');
- const form=new FormData();
- form.append('doc_type',$('dtp').value);
- form.append('file',file);
- try{
-  const result=await api('provider/documents','POST',form,true);
-  if(result){alert('ID uploaded successfully. It is now waiting for staff review.');await provider();}
- }catch(err){alert('Upload failed. Please check your internet connection and try again.');console.error(err);}
+ const form=new FormData();form.append('doc_type',$('dtp').value);form.append('file',file);
+ const result=await api('provider/documents','POST',form,true);
+ if(result){alert('ID document uploaded. Complete your profile and submit it for verification.');await provider();}
 }
 async function save(){
- const ids=[...document.querySelectorAll('.sc:checked')].map(x=>Number(x.value));
- try{
-  const result=await api('provider/me','PATCH',{business_name:$('pb').value,address:$('pa').value,service_area:$('pr').value,payout_info:$('po').value,service_ids:ids});
-  if(result){alert('Profile saved successfully.');await provider();}
- }catch(err){alert('Profile could not be saved. Please check your internet connection and try again.');console.error(err);}
+ const result=await api('provider/me','PATCH',{business_name:$('pb').value,address:$('pa').value,service_area:$('pr').value,payout_info:$('po').value,service_ids:[]});
+ if(result){alert('Profile submitted. It is now waiting for verification.');await provider();}
+}
+async function publishService(){
+ const file=$('offerPhoto')?.files?.[0];
+ if(!file)return alert('Choose a photo for this service.');
+ const form=new FormData();form.append('service_id',$('offerService').value);form.append('description',$('offerDescription').value);form.append('file',file);
+ const result=await api('provider/services','POST',form,true);
+ if(result){alert('Service published successfully.');await provider();}
 }
 function job(v){let b=v.booking,e=v.escrow,x=`<div class=c><b>#${b.id} ${h(v.service)}</b><br>${h(b.scheduled_at)} · ${h(e.currency)} ${e.amount} (you receive ${e.payout_amount})<br>${h(b.notes)}<br><span class=t>${ST[e.status]}</span>`;
 if(e.status=='funded')x+=`<p>Customer has paid; funds are safe in escrow. Do the job, then:</p><button onclick="dlv(${e.id})">Mark as delivered</button>`;
