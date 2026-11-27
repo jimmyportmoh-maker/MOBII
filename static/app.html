@@ -49,7 +49,7 @@ function customerCard(v){
  let x=`<div class=c><b>Request #${b.id}: ${h(v.service)}</b><p><span class=t>${h(status)}</span></p><p><b>Your request:</b> ${h(b.notes)}</p><p><b>Preferred time:</b> ${h(b.scheduled_at||'Flexible')}</p>`;
  if(b.status==='requested'&&!b.provider_id){
   const ps=v.available_providers||[];
-  x+=`<h4>Available providers</h4>${ps.length?ps.map(p=>`<div class=c><b>${h(p.business_name)}</b><br>${h(p.service_area)}<br><span class=t>${p.rating_count?`★ ${p.rating} (${p.rating_count} reviews)`:'New provider – no reviews yet'}</span><p>${h(p.description)}</p><button onclick="chooseProvider(${b.id},${p.id})">Select this provider</button></div>`).join(''):'<p>No verified provider has published this service yet. Check again later.</p>'}`;
+  x+=`<h4>Available providers</h4>${ps.length?ps.map(p=>`<div class=c>${p.profile_photo_url?`<img src="${h(p.profile_photo_url)}" alt="Provider profile picture" style="width:76px;height:76px;border-radius:50%;object-fit:cover;float:right">`:``}<b>${h(p.business_name)}</b><br>${h(p.service_area)}<br><span class=t>${p.rating_count?`★ ${p.rating} (${p.rating_count} reviews)`:'New provider – no reviews yet'}</span><p>${h(p.description)}</p><button onclick="chooseProvider(${b.id},${p.id})">Select this provider</button></div>`).join(''):'<p>No verified provider has published this service yet. Check again later.</p>'}`;
  }else if(b.status==='provider_selected'){
   x+=`<p>Request sent to <b>${h(v.provider)}</b>. Waiting for the provider to confirm availability.</p>`;
  }else if(b.status==='confirmed'){
