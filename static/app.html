@@ -25,11 +25,16 @@ function out(){localStorage.removeItem('mhp');T=null;$('who').innerHTML='';authV
 async function boot(){if(!T)return authView();let m=await api('me');if(!m)return out();
 $('who').innerHTML=`${h(m.name)} (${m.role}) <button class=l onclick="out()">Sign out</button>`;
 if(m.role=='provider')provider();else if(m.role=='customer')customer();else view.innerHTML='<div class=c>Staff accounts use the <a href="/admin">admin dashboard</a>.</div>'}
+function serviceOptions(items){
+ const groups={};
+ (items||[]).forEach(s=>{const name=s.category_name||"Other services";(groups[name]??=[]).push(s)});
+ return Object.keys(groups).sort((a,b)=>a.localeCompare(b)).map(name=>`<optgroup label="${h(name)}">${groups[name].map(s=>`<option value="${s.id}">${h(s.name)}</option>`).join("")}</optgroup>`).join("") || '<option value="">No services are currently available</option>';
+}
 // ---------- customer
 async function customer(){
  const [sv,my]=await Promise.all([api('services'),api('bookings/mine')]);
  view.innerHTML=`<div class=c><h3>Request a service</h3><p>Choose what you need and describe the work. You will select a provider from your dashboard. No payment is required when submitting a request.</p>
- <label>Service</label><select id=sv><option value="">Choose a service…</option>${sv.map(s=>`<option value=${s.id}>${h(s.name)}</option>`).join('')}</select>
+ <label>Service</label><select id=sv><option value="">Choose a service…</option>${serviceOptions(sv)}</select><small>${sv.length} available services in the catalogue</small>
  <label>Preferred date and time (optional)</label><input id=dt type=datetime-local>
  <label>Describe what you need</label><textarea id=nt rows=3 style="width:100%" placeholder="Explain the work, location and any important details"></textarea><button onclick="book()">Submit service request</button></div>
  <h3>My service requests</h3>${my.map(customerCard).join('')||'<p>No requests yet.</p>'}`;
