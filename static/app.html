@@ -12,7 +12,7 @@ button{background:var(--pri);color:#fff;border:0;cursor:pointer}button.d{backgro
 <script>
 let T=localStorage.mhp;const $=i=>document.getElementById(i),view=$('view');
 const h=s=>String(s??'').replace(/[&<>"']/g,c=>'&#'+c.charCodeAt(0)+';');
-const ST={awaiting_payment:'Awaiting payment',payment_submitted:'Payment being checked',funded:'Paid – held in escrow',delivered:'Delivered – awaiting approval',approved:'Approved – payout pending',disputed:'Disputed – under review',released:'Completed – provider paid',refunded:'Refunded'};
+const ST={requested:'Choose a provider',provider_selected:'Waiting for provider',confirmed:'Provider accepted',completed:'Work completed – payment due',cancelled:'Cancelled',awaiting_payment:'Awaiting payment',payment_submitted:'Payment being checked',funded:'Paid – held in escrow',delivered:'Delivered – awaiting approval',approved:'Approved – payout pending',disputed:'Disputed – under review',released:'Completed – provider paid',refunded:'Refunded',pending:'STK prompt sent',submitted:'Send Money submitted for verification',paid:'Paid',failed:'Payment failed'};
 async function api(p,m='GET',b,form){let hd={};if(T)hd.Authorization='Bearer '+T;if(!form)hd['Content-Type']='application/json';
 let r=await fetch('/api/'+p,{method:m,headers:hd,body:form?b:b?JSON.stringify(b):undefined});let d=await r.json().catch(()=>({}));
 if(!r.ok){alert(typeof d.detail=='string'?d.detail:'Check your input');return null}return d}
@@ -25,49 +25,8 @@ function out(){localStorage.removeItem('mhp');T=null;$('who').innerHTML='';authV
 async function boot(){if(!T)return authView();let m=await api('me');if(!m)return out();
 $('who').innerHTML=`${h(m.name)} (${m.role}) <button class=l onclick="out()">Sign out</button>`;
 if(m.role=='provider')provider();else if(m.role=='customer')customer();else view.innerHTML='<div class=c>Staff accounts use the <a href="/admin">admin dashboard</a>.</div>'}
-// ---------- customer
-let INS='';
-async function customer(){let [sv,ins,my]=await Promise.all([api('services'),api('escrow/instructions'),api('bookings/mine')]);INS=ins||'';
-view.innerHTML=`<div class=c><h3>Book a service</h3><select id=sv onchange="loadProv()"><option value="">Choose a service…</option>${sv.map(s=>`<option value=${s.id} data-p=${s.price}>${h(s.name)}${s.price?` – ${h(s.currency)} ${s.price}`:''}</option>`).join('')}</select><br>
-<select id=pv><option>Choose a service first</option></select><br><input id=dt type=datetime-local><br><input id=am type=number placeholder="Amount (if not fixed)"><br><input id=nt placeholder="Notes"><br>
-<button onclick="book()">Book &amp; pay into escrow</button></div><h3>My bookings</h3>${my.map(card).join('')||'<p>No bookings yet.</p>'}`}
-async function loadProv(){let id=sv.value;if(!id)return;let p=await api('providers?service_id='+id);if(!p)return;
-pv.innerHTML=p.length?p.map(x=>`<option value=${x.id}>${h(x.business_name)} – ${h(x.service_area)} · ${h(x.description.slice(0,90))}</option>`).join(''):'<option value="">No verified providers yet</option>';
-if(p.length){let selected=p[0];$('nt').placeholder='Selected provider: '+selected.business_name+' — '+selected.description.slice(0,100)}}
-async function book(){if(!sv.value||!pv.value||!dt.value)return alert('Choose service, provider and date');
-let d=await api('bookings','POST',{service_id:+sv.value,provider_id:+pv.value,scheduled_at:dt.value,notes:nt.value,amount:+am.value||0});if(d){alert('Booked. Now pay into escrow using the instructions shown.');customer()}}
-function card(v){let b=v.booking,e=v.escrow,x=`<div class=c><b>#${b.id} ${h(v.service)}</b> · ${h(v.provider)}<br>${h(b.scheduled_at)} · ${h(e.currency)} ${e.amount}<br><span class=t>${ST[e.status]}</span>`;
-if(e.status=='awaiting_payment')x+=`<p>${h(INS)}</p><p>Your booking ref: <b>MH-${b.id}</b></p><input id=r${e.id} placeholder="Payment confirmation code"><button onclick="pay(${e.id})">I have paid</button>`;
-if(e.status=='delivered')x+=`<p>Happy with the work? Approving lets us pay the provider.</p><button onclick="act(${e.id},'approve')">Approve &amp; release payment</button> `;
-if(['funded','delivered'].includes(e.status))x+=` <button class=d onclick="disp(${e.id})">Report a problem</button>`;return x+'</div>'}
-async function pay(id){if(await api(`escrow/${id}/pay`,'POST',{ref:$('r'+id).value}))customer()}
-async function act(id,a){if(await api(`escrow/${id}/${a}`,'POST',{}))boot()}
-async function disp(id){let n=prompt('Describe the problem:');if(n&&await api(`escrow/${id}/dispute`,'POST',{note:n}))customer()}
-// ---------- provider
-async function provider(){
- let [d,sv]=await Promise.all([api('provider/me'),api('services')]);
- if(!d)return;
- const p=d.profile, docs=d.docs||[], offers=d.offers||[];
- const hasId=docs.some(x=>['National ID','Passport'].includes(x.doc_type));
- const status=p.verification_status;
- const docsList=docs.map(x=>'<li>'+h(x.doc_type)+' – '+h(x.filename)+'</li>').join('')||'<li>No documents uploaded yet</li>';
- if(status==='approved'){
-  const details=d.provider_details||{};
-  const published=offers.length>0;
-  view.innerHTML=`<div class=c><h2>Provider dashboard</h2><span class=t>Verified provider</span><h3>${h(p.business_name)}</h3><p><b>Contact person:</b> ${h(details.name)}</p><p><b>Email:</b> ${h(details.email)}</p><p><b>Phone:</b> ${h(details.phone)}</p><p><b>Address:</b> ${h(p.address)}</p><p><b>Service area:</b> ${h(p.service_area)}</p></div>
-  ${published?offers.map(o=>`<div class=c><h3>Your published service</h3><p>${h(o.description)}</p><img src="/api/service-photos/${o.id}" alt="Service photo" style="max-width:240px;max-height:180px;object-fit:cover;border-radius:8px"><p><small>${h(o.photo_filename)}</small></p></div>`).join(''):`<div class=c><h3>Describe your service</h3><p>Tell customers what you do, where you work and what they can expect. You do not need to choose a service category here.</p><label>Service description</label><textarea id=offerDescription rows=5 style="width:100%" placeholder="Example: I install and repair home Wi-Fi, configure routers, troubleshoot internet connections and provide support around Kisumu."></textarea><label>Service photo (JPG or PNG, max 8 MB)</label><input id=offerPhoto type=file accept=".jpg,.jpeg,.png"><button onclick="publishService()">Publish my service</button></div>`}
-  <div class=c><h3>People who booked you</h3>${d.jobs.map(job).join('')||'<p>No customers have booked you yet. New bookings will appear here.</p>'}</div>`;
-  return;
- }
- if(status==='under_review' && hasId){
-  view.innerHTML=`<div class=c style="text-align:center;padding:28px 16px"><h2>Profile submitted</h2><p>Your provider profile and ID document are waiting for verification by the MOBI HUB team.</p><h3>Current status: Under review</h3><p>You cannot publish services or upload service photos until your profile is approved.</p><p>We will update this page when the verification status changes.</p></div><div class=c><h3>Submitted documents</h3><ul>${docsList}</ul></div>`;
-  return;
- }
- const note=p.verification_note?`<p><b>Admin message:</b> ${h(p.verification_note)}</p>`:'';
- view.innerHTML=`<div class=c><h3>${status==='more_info'?'More information required':status==='rejected'?'Profile needs changes':'Complete provider registration'}</h3>${note}<p>1. Upload your National ID or passport. 2. Complete your business profile and payout details. 3. Submit once. The profile form will close and your account will wait for verification.</p><label>ID document type</label><select id=dtp>${d.doc_types.map(t=>`<option>${h(t)}</option>`).join('')}</select><label>Choose ID file (JPG, PNG or PDF, max 8 MB)</label><input id=df type=file accept=".jpg,.jpeg,.png,.pdf"><button onclick="upl()">Upload ID document</button><ul>${docsList}</ul></div>
- <div class=c><h3>Business profile</h3><label>Business name</label><input id=pb placeholder="Business name" value="${h(p.business_name)}"><label>Business address</label><input id=pa placeholder="Address" value="${h(p.address)}"><label>Service area</label><input id=pr placeholder="e.g. Kisumu County or Country wide" value="${h(p.service_area)}"><label>Payout details (M-Pesa number or bank account)</label><input id=po placeholder="Payout details" value="${h(p.payout_info)}" style="width:100%"><button onclick="save()">Submit profile for verification</button></div>`;
-}
-async function upl(){
+// ---------- provider// ---------- provider
+async function upl(){async function upl(){
  const file=$('df')?.files?.[0];
  if(!file)return alert('Choose your ID file first.');
  const form=new FormData();form.append('doc_type',$('dtp').value);form.append('file',file);
@@ -83,7 +42,7 @@ async function publishService(){
  if(!file)return alert('Choose a photo for this service.');
  const description=$('offerDescription').value.trim();
  if(description.length<20)return alert('Please describe your service in at least 20 characters.');
- const form=new FormData();form.append('description',description);form.append('file',file);
+ const form=new FormData();form.append('service_id',$('offerService').value);form.append('description',description);form.append('file',file);
  const result=await api('provider/services','POST',form,true);
  if(result){alert('Service published successfully.');await provider();}
 }
