@@ -1,4 +1,4 @@
-import os, uuid
+import os, uuid, json, base64, urllib.request, urllib.error
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from fastapi.responses import FileResponse
@@ -23,7 +23,11 @@ def prov(db, u):
 def view(db, b):
     e = db.query(Escrow).filter_by(booking_id=b.id).first(); s = db.get(Service, b.service_id)
     p = db.get(ProviderProfile, b.provider_id) if b.provider_id else None
-    return {"booking": row(b), "escrow": row(e) if e else None, "service": s.name if s else "", "provider": p.business_name if p else ""}
+    pu = db.get(User, p.user_id) if p else None
+    payments = db.query(Payment).filter_by(booking_id=b.id).order_by(Payment.id.desc()).all()
+    return {"booking": row(b), "escrow": row(e) if e else None, "service": s.name if s else "",
+            "provider": p.business_name if p else "", "provider_phone": (p.payout_info or pu.phone or "") if p else "",
+            "payments": [row(x) for x in payments]}
 
 @router.get("/api/me")
 def me(u: User = Depends(current_user)): return {"id": u.id, "name": u.name, "email": u.email, "role": u.role}
@@ -79,45 +83,7 @@ def service_photo(offer_id: int, db: Session = Depends(get_db)):
         raise HTTPException(404, "Service photo is no longer available")
     return FileResponse(path, filename=offer.photo_filename)
 
-@router.post("/api/provider/services")
-def provider_service(description: str = Form(...), file: UploadFile = File(...),
-                     u: User = Depends(current_user), db: Session = Depends(get_db)):
-    p = prov(db, u)
-    if p.verification_status != "approved":
-        raise HTTPException(403, "Your provider profile must be approved before you can publish services.")
-    if len(description.strip()) < 20:
-        raise HTTPException(400, "Describe your service in at least 20 characters.")
-    # Providers describe their own work; the platform uses one internal catalogue
-    # entry so customers can discover and book these custom listings.
-    s = db.query(Service).filter_by(name="Provider-described service").first()
-    if not s:
-        s = Service(name="Provider-described service", description="Services described by verified providers",
-                    provider_type="individual", booking_method="appointment", location_type="physical",
-                    price_type="quotation", price=0, currency="KES", active=True)
-        db.add(s); db.flush()
-    ext = os.path.splitext(file.filename or "")[1].lower()
-    if ext not in {".jpg", ".jpeg", ".png"}:
-        raise HTTPException(400, "Service photos must be JPG or PNG.")
-    data = file.file.read(MAXB + 1)
-    if len(data) > MAXB:
-        raise HTTPException(400, "Photo larger than 8 MB.")
-    stored = uuid.uuid4().hex + ext
-    with open(os.path.join(UPLOADS, stored), "wb") as f: f.write(data)
-    offer = db.query(ProviderServiceOffer).filter_by(provider_id=p.id, service_id=s.id).first()
-    if offer:
-        old_path = offer.photo_path
-        offer.description, offer.photo_path, offer.photo_filename = description.strip(), stored, os.path.basename(file.filename or "service-photo")
-        if old_path:
-            try: os.remove(os.path.join(UPLOADS, old_path))
-            except OSError: pass
-    else:
-        db.add(ProviderServiceOffer(provider_id=p.id, service_id=s.id, description=description.strip(),
-                                    photo_path=stored, photo_filename=os.path.basename(file.filename or "service-photo")))
-    db.flush()
-    p.service_ids = str(s.id)
-    db.commit()
-    return {"ok": True, "service_id": s.id}
-@router.post("/api/provider/documents")
+@router.post("/api/provider/documents")@router.post("/api/provider/documents")
 def upload_doc(doc_type: str = Form(...), expires_on: str = Form(""), file: UploadFile = File(...),
                u: User = Depends(current_user), db: Session = Depends(get_db)):
     p = prov(db, u)
@@ -132,36 +98,8 @@ def upload_doc(doc_type: str = Form(...), expires_on: str = Form(""), file: Uplo
     db.commit(); return {"ok": True}
 
 # ---- Customer
-@router.get("/api/providers")
-def providers(service_id: int, u: User = Depends(current_user), db: Session = Depends(get_db)):
-    out = []
-    for p in db.query(ProviderProfile).filter_by(verification_status="approved"):
-        usr = db.get(User, p.user_id)
-        if usr and usr.status == "active" and str(service_id) in (p.service_ids or "").split(","):
-            offer = db.query(ProviderServiceOffer).filter_by(provider_id=p.id, service_id=service_id).first()
-            out.append({"id": p.id, "business_name": p.business_name, "service_area": p.service_area,
-                        "address": p.address, "description": offer.description if offer else "",
-                        "photo_id": offer.id if offer else None,
-                        "phone": usr.phone, "email": usr.email})
-    return out
-class NewBooking(BaseModel): service_id: int; provider_id: int; scheduled_at: str; notes: str = ""; amount: float = 0
-@router.post("/api/bookings")
-def book(b: NewBooking, u: User = Depends(current_user), db: Session = Depends(get_db)):
-    if u.role != "customer": raise HTTPException(403, "Customers only")
-    s, p = db.get(Service, b.service_id), db.get(ProviderProfile, b.provider_id)
-    if not s or not s.active: raise HTTPException(404, "Service unavailable")
-    if not p or p.verification_status != "approved" or str(s.id) not in (p.service_ids or "").split(","):
-        raise HTTPException(400, "Provider not available for this service")
-    amount = s.price if s.price > 0 else b.amount
-    if amount <= 0: raise HTTPException(400, "Enter an amount")
-    o = Booking(customer_id=u.id, provider_id=p.id, service_id=s.id, scheduled_at=b.scheduled_at, notes=b.notes); db.add(o); db.flush()
-    com = round(amount * s.commission_pct / 100, 2)
-    e = Escrow(booking_id=o.id, amount=amount, currency=s.currency, commission_pct=s.commission_pct, commission_amount=com, payout_amount=round(amount - com, 2))
-    db.add(e); db.flush(); log(db, e, u, "created"); db.commit(); return view(db, o)
-@router.get("/api/bookings/mine")
-def mine(u: User = Depends(current_user), db: Session = Depends(get_db)):
-    return [view(db, b) for b in db.query(Booking).filter_by(customer_id=u.id).order_by(Booking.id.desc())]
 
+# ---- Escrow transitions
 # ---- Escrow transitions
 class Ref(BaseModel): ref: str = ""; note: str = ""
 def esc_for(db, eid, u, who):
