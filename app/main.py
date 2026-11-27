@@ -1,4 +1,6 @@
-import os, uuid, shutil
+import os, uuid, shutil, secrets, hashlib, smtplib
+from datetime import datetime, timedelta
+from email.message import EmailMessage
 from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, Form
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -49,7 +51,39 @@ def guard(res, u):
     if u.role in ("customer", "provider"): raise HTTPException(403, "Admins only")
 
 class Login(BaseModel): email: str; password: str
-class Register(BaseModel): email: str; password: str; name: str; phone: str = ""; role: str = "customer"; business_name: str = ""
+class SendEmailCode(BaseModel): email: str
+class VerifyRegister(BaseModel):
+    email: str
+    code: str
+    password: str
+    name: str
+    phone: str = ""
+    role: str = "customer"
+    business_name: str = ""
+
+def email_code_hash(email, code):
+    return hashlib.sha256((email.lower() + ":" + code).encode()).hexdigest()
+
+def send_verification_email(recipient, code):
+    host = os.getenv("SMTP_HOST", "").strip()
+    username = os.getenv("SMTP_USER", "").strip()
+    password = os.getenv("SMTP_PASSWORD", "")
+    sender = os.getenv("SMTP_FROM", username).strip()
+    if not host or not username or not password or not sender:
+        raise HTTPException(503, "Email delivery is not configured yet. Please try again later.")
+    port = int(os.getenv("SMTP_PORT", "587"))
+    msg = EmailMessage()
+    msg["Subject"] = "Your MOBI HUB verification code"
+    msg["From"] = sender
+    msg["To"] = recipient
+    msg.set_content(f"Your MOBI HUB verification code is {code}. It expires in 10 minutes. If you did not request this code, you can ignore this email.")
+    try:
+        with smtplib.SMTP(host, port, timeout=15) as server:
+            server.starttls()
+            server.login(username, password)
+            server.send_message(msg)
+    except Exception:
+        raise HTTPException(502, "We could not send the email code. Try again later.")
 
 @app.post("/api/auth/login")
 def login(b: Login, db: Session = Depends(get_db)):
@@ -58,15 +92,58 @@ def login(b: Login, db: Session = Depends(get_db)):
     if u.status != "active": raise HTTPException(403, "Account " + u.status)
     return {"token": make_token(u), "role": u.role, "name": u.name}
 
+@app.post("/api/auth/send-code")
+def send_email_code(b: SendEmailCode, db: Session = Depends(get_db)):
+    email = b.email.strip().lower()
+    if "@" not in email or "." not in email.rsplit("@", 1)[-1]:
+        raise HTTPException(400, "Enter a valid email address.")
+    if db.query(User).filter_by(email=email).first():
+        raise HTTPException(409, "Email already registered. Please sign in.")
+    challenge = db.query(EmailVerification).filter_by(email=email).first()
+    now = datetime.utcnow()
+    if challenge and challenge.sent_at and (now - challenge.sent_at).total_seconds() < 60:
+        raise HTTPException(429, "Please wait 60 seconds before requesting another code.")
+    code = f"{secrets.randbelow(1000000):06d}"
+    send_verification_email(email, code)
+    if not challenge:
+        challenge = EmailVerification(email=email, code_hash=email_code_hash(email, code),
+                                       expires_at=now + timedelta(minutes=10), sent_at=now, attempts=0)
+        db.add(challenge)
+    else:
+        challenge.code_hash = email_code_hash(email, code)
+        challenge.expires_at = now + timedelta(minutes=10)
+        challenge.sent_at = now
+        challenge.attempts = 0
+    db.commit()
+    return {"ok": True, "message": "A 6-digit verification code has been sent to your email."}
+
 @app.post("/api/auth/register")
-def register(b: Register, db: Session = Depends(get_db)):
+def register(b: VerifyRegister, db: Session = Depends(get_db)):
+    email = b.email.strip().lower()
     if b.role not in ("customer", "provider"): raise HTTPException(400, "Role must be customer or provider")
     if len(b.password) < 8: raise HTTPException(400, "Password must be 8+ characters")
-    if db.query(User).filter_by(email=b.email.lower()).first(): raise HTTPException(409, "Email already registered")
-    u = User(email=b.email.lower(), name=b.name, phone=b.phone, role=b.role, password_hash=hash_pw(b.password)); db.add(u); db.flush()
-    if b.role == "provider": db.add(ProviderProfile(user_id=u.id, business_name=b.business_name))
-    db.commit(); return {"token": make_token(u), "role": u.role}
-
+    if not b.name.strip(): raise HTTPException(400, "Enter your full name.")
+    challenge = db.query(EmailVerification).filter_by(email=email).first()
+    if not challenge: raise HTTPException(400, "Request an email verification code first.")
+    if challenge.expires_at < datetime.utcnow():
+        db.delete(challenge); db.commit()
+        raise HTTPException(400, "Verification code expired. Request a new one.")
+    if challenge.attempts >= 5:
+        db.delete(challenge); db.commit()
+        raise HTTPException(429, "Too many incorrect attempts. Request a new code.")
+    if not secrets.compare_digest(challenge.code_hash, email_code_hash(email, b.code.strip())):
+        challenge.attempts += 1
+        db.commit()
+        raise HTTPException(400, "Incorrect verification code.")
+    if db.query(User).filter_by(email=email).first():
+        db.delete(challenge); db.commit()
+        raise HTTPException(409, "Email already registered. Please sign in.")
+    u = User(email=email, name=b.name.strip(), phone=b.phone.strip(), role=b.role, password_hash=hash_pw(b.password))
+    db.add(u); db.flush()
+    if b.role == "provider": db.add(ProviderProfile(user_id=u.id, business_name=b.business_name.strip()))
+    db.delete(challenge)
+    db.commit()
+    return {"token": make_token(u), "role": u.role, "message": "Email verified and account created."}
 # ---- Admin
 @app.get("/api/admin/overview")
 def overview(u: User = Depends(require("analytics", "operations", "finance", "support", "verification", "catalogue")), db: Session = Depends(get_db)):
