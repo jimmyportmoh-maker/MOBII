@@ -52,8 +52,24 @@ view.innerHTML=`<div class=c><h3>Verification: <span class=t>${h(p.verification_
 <input id=pr placeholder="Service area" value="${h(p.service_area)}"><br><input id=po placeholder="Payout details (M-Pesa number or bank account)" value="${h(p.payout_info)}" style="width:100%"><p>Services you offer:</p>
 ${sv.map(s=>`<label><input type=checkbox class=sc value=${s.id} ${mine.includes(String(s.id))?'checked':''}> ${h(s.name)}</label>`).join('')}<button onclick="save()">Save profile</button></div>
 <h3>My jobs</h3>${d.jobs.map(job).join('')||'<p>No jobs yet. Jobs appear once you are verified and a customer books you.</p>'}`}
-async function upl(){if(!df.files[0])return alert('Choose a file');let f=new FormData();f.append('doc_type',dtp.value);f.append('file',df.files[0]);if(await api('provider/documents','POST',f,true)){alert('Uploaded. Staff will review it.');provider()}}
-async function save(){let ids=[...document.querySelectorAll('.sc:checked')].map(x=>+x.value);if(await api('provider/me','PATCH',{business_name:pb.value,address:pa.value,service_area:pr.value,payout_info:po.value,service_ids:ids}))alert('Saved')}
+async function upl(){
+ const file=$('df')?.files?.[0];
+ if(!file)return alert('Choose your ID file first.');
+ const form=new FormData();
+ form.append('doc_type',$('dtp').value);
+ form.append('file',file);
+ try{
+  const result=await api('provider/documents','POST',form,true);
+  if(result){alert('ID uploaded successfully. It is now waiting for staff review.');await provider();}
+ }catch(err){alert('Upload failed. Please check your internet connection and try again.');console.error(err);}
+}
+async function save(){
+ const ids=[...document.querySelectorAll('.sc:checked')].map(x=>Number(x.value));
+ try{
+  const result=await api('provider/me','PATCH',{business_name:$('pb').value,address:$('pa').value,service_area:$('pr').value,payout_info:$('po').value,service_ids:ids});
+  if(result){alert('Profile saved successfully.');await provider();}
+ }catch(err){alert('Profile could not be saved. Please check your internet connection and try again.');console.error(err);}
+}
 function job(v){let b=v.booking,e=v.escrow,x=`<div class=c><b>#${b.id} ${h(v.service)}</b><br>${h(b.scheduled_at)} · ${h(e.currency)} ${e.amount} (you receive ${e.payout_amount})<br>${h(b.notes)}<br><span class=t>${ST[e.status]}</span>`;
 if(e.status=='funded')x+=`<p>Customer has paid; funds are safe in escrow. Do the job, then:</p><button onclick="dlv(${e.id})">Mark as delivered</button>`;
 if(e.status=='awaiting_payment')x+=`<p>Wait for the customer's payment before starting.</p>`;return x+'</div>'}
