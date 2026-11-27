@@ -28,11 +28,11 @@ if(m.role=='provider')provider();else if(m.role=='customer')customer();else view
 // ---------- customer
 async function customer(){
  const [sv,my]=await Promise.all([api('services'),api('bookings/mine')]);
- view.innerHTML=\`<div class=c><h3>Request a service</h3><p>Choose what you need and describe the work. You will select a provider from your dashboard. No payment is required when submitting a request.</p>
- <label>Service</label><select id=sv><option value="">Choose a service…</option>\${sv.map(s=>\`<option value=\${s.id}>\${h(s.name)}</option>\`).join('')}</select>
+ view.innerHTML=`<div class=c><h3>Request a service</h3><p>Choose what you need and describe the work. You will select a provider from your dashboard. No payment is required when submitting a request.</p>
+ <label>Service</label><select id=sv><option value="">Choose a service…</option>${sv.map(s=>`<option value=${s.id}>${h(s.name)}</option>`).join('')}</select>
  <label>Preferred date and time (optional)</label><input id=dt type=datetime-local>
  <label>Describe what you need</label><textarea id=nt rows=3 style="width:100%" placeholder="Explain the work, location and any important details"></textarea><button onclick="book()">Submit service request</button></div>
- <h3>My service requests</h3>\${my.map(customerCard).join('')||'<p>No requests yet.</p>'}\`;
+ <h3>My service requests</h3>${my.map(customerCard).join('')||'<p>No requests yet.</p>'}`;
 }
 async function book(){
  if(!sv.value)return alert('Choose a service first.');
@@ -41,37 +41,37 @@ async function book(){
 }
 function customerCard(v){
  const b=v.booking, pays=v.payments||[], last=pays[0], status=ST[b.status]||b.status;
- let x=\`<div class=c><b>Request #\${b.id}: \${h(v.service)}</b><p><span class=t>\${h(status)}</span></p><p><b>Your request:</b> \${h(b.notes)}</p><p><b>Preferred time:</b> \${h(b.scheduled_at||'Flexible')}</p>\`;
+ let x=`<div class=c><b>Request #${b.id}: ${h(v.service)}</b><p><span class=t>${h(status)}</span></p><p><b>Your request:</b> ${h(b.notes)}</p><p><b>Preferred time:</b> ${h(b.scheduled_at||'Flexible')}</p>`;
  if(b.status==='requested'&&!b.provider_id){
   const ps=v.available_providers||[];
-  x+=\`<h4>Available providers</h4>\${ps.length?ps.map(p=>\`<div class=c><b>\${h(p.business_name)}</b><br>\${h(p.service_area)}<br><span class=t>\${p.rating_count?\`★ \${p.rating} (\${p.rating_count} reviews)\`:'New provider – no reviews yet'}</span><p>\${h(p.description)}</p><button onclick="chooseProvider(\${b.id},\${p.id})">Select this provider</button></div>\`).join(''):'<p>No verified provider has published this service yet. Check again later.</p>'}\`;
+  x+=`<h4>Available providers</h4>${ps.length?ps.map(p=>`<div class=c><b>${h(p.business_name)}</b><br>${h(p.service_area)}<br><span class=t>${p.rating_count?`★ ${p.rating} (${p.rating_count} reviews)`:'New provider – no reviews yet'}</span><p>${h(p.description)}</p><button onclick="chooseProvider(${b.id},${p.id})">Select this provider</button></div>`).join(''):'<p>No verified provider has published this service yet. Check again later.</p>'}`;
  }else if(b.status==='provider_selected'){
-  x+=\`<p>Request sent to <b>\${h(v.provider)}</b>. Waiting for the provider to confirm availability.</p>\`;
+  x+=`<p>Request sent to <b>${h(v.provider)}</b>. Waiting for the provider to confirm availability.</p>`;
  }else if(b.status==='confirmed'){
-  x+=\`<p><b>\${h(v.provider)}</b> accepted your request. Agree on the work and price before it begins.</p>\`;
+  x+=`<p><b>${h(v.provider)}</b> accepted your request. Agree on the work and price before it begins.</p>`;
  }else if(b.status==='completed'){
-  x+=\`<p><b>\${h(v.provider)}</b> marked the work complete. Confirm the agreed amount before paying.</p><p>Provider M-Pesa number: <b>\${h(v.provider_phone||'Ask provider to confirm their M-Pesa number')}</b></p>\`;
-  if(last&&last.status==='paid')x+=\`<p><span class=t>Payment confirmed: \${h(last.reference||'M-Pesa')}</span></p>\`;
-  else if(last&&last.status==='submitted')x+=\`<p><span class=t>Send Money code submitted. Waiting for finance verification.</span></p>\`;
-  else if(last&&last.status==='pending')x+=\`<p><span class=t>STK prompt sent. Complete it on your phone, then refresh this page.</span></p>\`;
-  else if(last&&last.status==='failed')x+=\`<p><span class=t>Payment failed or was cancelled. You can try again.</span></p>\`;
-  if(!last||last.status==='failed')x+=\`<div class=c><h4>Pay using M-Pesa</h4><label>Amount (KSh)</label><input id="amt\${b.id}" type=number min=1 step=1 placeholder="Agreed amount"><label>Phone number for STK Push</label><input id="ph\${b.id}" placeholder="07XXXXXXXX"><p><small>STK Push is collected through MOBI HUB's configured business shortcode. Provider payout is handled separately by the finance team. To pay the provider directly, use Send Money below.</small></p><button onclick="payStk(\${b.id})">Pay with STK Push</button><hr><p>Or send money manually to the provider's M-Pesa number shown above. After paying, enter the M-Pesa confirmation code below.</p><label>M-Pesa confirmation code</label><input id="ref\${b.id}" placeholder="e.g. QAB12CD34E"><button class=l onclick="paySend(\${b.id})">I paid using Send Money</button></div>\`;
-  x+=\`<button class=l onclick="customer()">Refresh payment status</button>\`;
+  x+=`<p><b>${h(v.provider)}</b> marked the work complete. Confirm the agreed amount before paying.</p><p>Provider M-Pesa number: <b>${h(v.provider_phone||'Ask provider to confirm their M-Pesa number')}</b></p>`;
+  if(last&&last.status==='paid')x+=`<p><span class=t>Payment confirmed: ${h(last.reference||'M-Pesa')}</span></p>`;
+  else if(last&&last.status==='submitted')x+=`<p><span class=t>Send Money code submitted. Waiting for finance verification.</span></p>`;
+  else if(last&&last.status==='pending')x+=`<p><span class=t>STK prompt sent. Complete it on your phone, then refresh this page.</span></p>`;
+  else if(last&&last.status==='failed')x+=`<p><span class=t>Payment failed or was cancelled. You can try again.</span></p>`;
+  if(!last||last.status==='failed')x+=`<div class=c><h4>Pay using M-Pesa</h4><label>Amount (KSh)</label><input id="amt${b.id}" type=number min=1 step=1 placeholder="Agreed amount"><label>Phone number for STK Push</label><input id="ph${b.id}" placeholder="07XXXXXXXX"><p><small>STK Push is collected through MOBI HUB's configured business shortcode. Provider payout is handled separately by the finance team. To pay the provider directly, use Send Money below.</small></p><button onclick="payStk(${b.id})">Pay with STK Push</button><hr><p>Or send money manually to the provider's M-Pesa number shown above. After paying, enter the M-Pesa confirmation code below.</p><label>M-Pesa confirmation code</label><input id="ref${b.id}" placeholder="e.g. QAB12CD34E"><button class=l onclick="paySend(${b.id})">I paid using Send Money</button></div>`;
+  x+=`<button class=l onclick="customer()">Refresh payment status</button>`;
  }
- if(last&&b.status!=='completed')x+=\`<p>Payment: \${h(ST[last.status]||last.status)}</p>\`;
+ if(last&&b.status!=='completed')x+=`<p>Payment: ${h(ST[last.status]||last.status)}</p>`;
  return x+'</div>';
 }
-async function chooseProvider(id,pid){if(await api(\`bookings/\${id}/select-provider\`,'POST',{provider_id:pid})){alert('Request sent to provider.');customer();}}
+async function chooseProvider(id,pid){if(await api(`bookings/${id}/select-provider`,'POST',{provider_id:pid})){alert('Request sent to provider.');customer();}}
 async function paySend(id){
  const amount=+$('amt'+id).value, receipt=$('ref'+id).value.trim();
  if(!amount||!receipt)return alert('Enter the agreed amount and M-Pesa confirmation code.');
- const d=await api(\`bookings/\${id}/pay/send-money\`,'POST',{amount,receipt});
+ const d=await api(`bookings/${id}/pay/send-money`,'POST',{amount,receipt});
  if(d){alert(d.message);customer();}
 }
 async function payStk(id){
  const amount=+$('amt'+id).value, phone=$('ph'+id).value.trim();
  if(!amount||!phone)return alert('Enter the amount and your M-Pesa phone number.');
- const d=await api(\`bookings/\${id}/pay/stk\`,'POST',{amount,phone});
+ const d=await api(`bookings/${id}/pay/stk`,'POST',{amount,phone});
  if(d){alert(d.message);customer();}
 }
 // ---------- provider
@@ -83,29 +83,29 @@ async function provider(){
  const docsList=docs.map(x=>'<li>'+h(x.doc_type)+' – '+h(x.filename)+'</li>').join('')||'<li>No documents uploaded yet</li>';
  if(status==='approved'){
   const details=d.provider_details||{};
-  view.innerHTML=\`<div class=c><h2>Provider dashboard</h2><span class=t>Verified provider</span><h3>\${h(p.business_name)}</h3><p><b>Contact person:</b> \${h(details.name)}</p><p><b>Email:</b> \${h(details.email)}</p><p><b>Phone:</b> \${h(details.phone)}</p><p><b>Address:</b> \${h(p.address)}</p><p><b>Service area:</b> \${h(p.service_area)}</p></div>
-  <div class=c><h3>Publish a service</h3><label>Choose catalogue service</label><select id=offerService>\${sv.map(z=>\`<option value=\${z.id}>\${h(z.name)}</option>\`).join('')}</select><label>Describe what you offer</label><textarea id=offerDescription rows=4 style="width:100%" placeholder="Describe your work, experience and service area"></textarea><label>Service photo (JPG or PNG, max 8 MB)</label><input id=offerPhoto type=file accept=".jpg,.jpeg,.png"><button onclick="publishService()">Publish service</button></div>
-  <h3>Your published services</h3>\${offers.map(o=>\`<div class=c><b>\${h(o.service)}</b><p>\${h(o.description)}</p><img src="/api/service-photos/\${o.id}" alt="Service photo" style="max-width:240px;max-height:180px;object-fit:cover;border-radius:8px"></div>\`).join('')||'<p>No services published yet.</p>'}
-  <h3>Service requests and jobs</h3>\${d.jobs.map(job).join('')||'<div class=c>No requests yet. New customer requests will appear here.</div>'}\`;
+  view.innerHTML=`<div class=c><h2>Provider dashboard</h2><span class=t>Verified provider</span><h3>${h(p.business_name)}</h3><p><b>Contact person:</b> ${h(details.name)}</p><p><b>Email:</b> ${h(details.email)}</p><p><b>Phone:</b> ${h(details.phone)}</p><p><b>Address:</b> ${h(p.address)}</p><p><b>Service area:</b> ${h(p.service_area)}</p></div>
+  <div class=c><h3>Publish a service</h3><label>Choose catalogue service</label><select id=offerService>${sv.map(z=>`<option value=${z.id}>${h(z.name)}</option>`).join('')}</select><label>Describe what you offer</label><textarea id=offerDescription rows=4 style="width:100%" placeholder="Describe your work, experience and service area"></textarea><label>Service photo (JPG or PNG, max 8 MB)</label><input id=offerPhoto type=file accept=".jpg,.jpeg,.png"><button onclick="publishService()">Publish service</button></div>
+  <h3>Your published services</h3>${offers.map(o=>`<div class=c><b>${h(o.service)}</b><p>${h(o.description)}</p><img src="/api/service-photos/${o.id}" alt="Service photo" style="max-width:240px;max-height:180px;object-fit:cover;border-radius:8px"></div>`).join('')||'<p>No services published yet.</p>'}
+  <h3>Service requests and jobs</h3>${d.jobs.map(job).join('')||'<div class=c>No requests yet. New customer requests will appear here.</div>'}`;
   return;
  }
  if(status==='under_review' && hasId){
-  view.innerHTML=\`<div class=c style="text-align:center;padding:28px 16px"><h2>Profile submitted</h2><p>Your provider profile and ID document are waiting for verification by the MOBI HUB team.</p><h3>Current status: Under review</h3><p>You cannot publish services until your profile is approved.</p></div><div class=c><h3>Submitted documents</h3><ul>\${docsList}</ul></div>\`;
+  view.innerHTML=`<div class=c style="text-align:center;padding:28px 16px"><h2>Profile submitted</h2><p>Your provider profile and ID document are waiting for verification by the MOBI HUB team.</p><h3>Current status: Under review</h3><p>You cannot publish services until your profile is approved.</p></div><div class=c><h3>Submitted documents</h3><ul>${docsList}</ul></div>`;
   return;
  }
- const note=p.verification_note?\`<p><b>Admin message:</b> \${h(p.verification_note)}</p>\`:'';
- view.innerHTML=\`<div class=c><h3>\${status==='more_info'?'More information required':status==='rejected'?'Profile needs changes':'Complete provider registration'}</h3>\${note}<p>1. Upload your National ID or passport. 2. Complete your business profile and M-Pesa payout number. 3. Submit once and wait for verification.</p><label>ID document type</label><select id=dtp>\${d.doc_types.map(t=>\`<option>\${h(t)}</option>\`).join('')}</select><label>Choose ID file (JPG, PNG or PDF, max 8 MB)</label><input id=df type=file accept=".jpg,.jpeg,.png,.pdf"><button onclick="upl()">Upload ID document</button><ul>\${docsList}</ul></div>
- <div class=c><h3>Business profile</h3><label>Business name</label><input id=pb placeholder="Business name" value="\${h(p.business_name)}"><label>Business address</label><input id=pa placeholder="Address" value="\${h(p.address)}"><label>Service area</label><input id=pr placeholder="e.g. Kisumu County or Country wide" value="\${h(p.service_area)}"><label>Payout details (M-Pesa number)</label><input id=po placeholder="07XXXXXXXX" value="\${h(p.payout_info)}" style="width:100%"><button onclick="save()">Submit profile for verification</button></div>\`;
+ const note=p.verification_note?`<p><b>Admin message:</b> ${h(p.verification_note)}</p>`:'';
+ view.innerHTML=`<div class=c><h3>${status==='more_info'?'More information required':status==='rejected'?'Profile needs changes':'Complete provider registration'}</h3>${note}<p>1. Upload your National ID or passport. 2. Complete your business profile and M-Pesa payout number. 3. Submit once and wait for verification.</p><label>ID document type</label><select id=dtp>${d.doc_types.map(t=>`<option>${h(t)}</option>`).join('')}</select><label>Choose ID file (JPG, PNG or PDF, max 8 MB)</label><input id=df type=file accept=".jpg,.jpeg,.png,.pdf"><button onclick="upl()">Upload ID document</button><ul>${docsList}</ul></div>
+ <div class=c><h3>Business profile</h3><label>Business name</label><input id=pb placeholder="Business name" value="${h(p.business_name)}"><label>Business address</label><input id=pa placeholder="Address" value="${h(p.address)}"><label>Service area</label><input id=pr placeholder="e.g. Kisumu County or Country wide" value="${h(p.service_area)}"><label>Payout details (M-Pesa number)</label><input id=po placeholder="07XXXXXXXX" value="${h(p.payout_info)}" style="width:100%"><button onclick="save()">Submit profile for verification</button></div>`;
 }
 function job(v){
  const b=v.booking, status=ST[b.status]||b.status;
- let x=\`<div class=c><b>Request #\${b.id}: \${h(v.service)}</b><br><span class=t>\${h(status)}</span><p><b>Customer:</b> \${h(v.customer_name||'Customer')} · \${h(v.customer_phone||'')}</p><p><b>Email:</b> \${h(v.customer_email||'')}</p><p><b>Preferred time:</b> \${h(b.scheduled_at||'Flexible')}</p><p><b>Customer request:</b> \${h(b.notes)}</p>\`;
- if(b.status==='provider_selected')x+=\`<p>This customer selected your service. Confirm whether you are available.</p><button onclick="providerAction(\${b.id},'accept')">Accept request</button> <button class=d onclick="providerAction(\${b.id},'decline')">Decline</button>\`;
- if(b.status==='confirmed')x+=\`<p>You accepted this request. After completing the agreed work, mark it complete to enable customer payment.</p><button onclick="providerAction(\${b.id},'complete')">Mark work completed</button>\`;
- if(b.status==='completed')x+=\`<p>Work marked complete. Waiting for customer payment.</p>\`;
+ let x=`<div class=c><b>Request #${b.id}: ${h(v.service)}</b><br><span class=t>${h(status)}</span><p><b>Customer:</b> ${h(v.customer_name||'Customer')} · ${h(v.customer_phone||'')}</p><p><b>Email:</b> ${h(v.customer_email||'')}</p><p><b>Preferred time:</b> ${h(b.scheduled_at||'Flexible')}</p><p><b>Customer request:</b> ${h(b.notes)}</p>`;
+ if(b.status==='provider_selected')x+=`<p>This customer selected your service. Confirm whether you are available.</p><button onclick="providerAction(${b.id},'accept')">Accept request</button> <button class=d onclick="providerAction(${b.id},'decline')">Decline</button>`;
+ if(b.status==='confirmed')x+=`<p>You accepted this request. After completing the agreed work, mark it complete to enable customer payment.</p><button onclick="providerAction(${b.id},'complete')">Mark work completed</button>`;
+ if(b.status==='completed')x+=`<p>Work marked complete. Waiting for customer payment.</p>`;
  return x+'</div>';
 }
-async function providerAction(id,action){if(await api(\`provider/bookings/\${id}/\${action}\`,'POST',{})){alert(action==='accept'?'Request accepted.':action==='decline'?'Request declined.':'Work marked completed.');provider();}}
+async function providerAction(id,action){if(await api(`provider/bookings/${id}/${action}`,'POST',{})){alert(action==='accept'?'Request accepted.':action==='decline'?'Request declined.':'Work marked completed.');provider();}}
 async function upl(){
  const file=$('df')?.files?.[0];
  if(!file)return alert('Choose your ID file first.');
