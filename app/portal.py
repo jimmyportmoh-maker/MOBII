@@ -1,6 +1,7 @@
 import os, uuid
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from .db import get_db
@@ -57,6 +58,17 @@ def patch_me(b: ProfileIn, u: User = Depends(current_user), db: Session = Depend
     p.business_name, p.address, p.service_area, p.payout_info = b.business_name.strip(), b.address.strip(), b.service_area.strip(), b.payout_info.strip()
     p.verification_status = "under_review"
     db.commit(); return row(p)
+
+
+@router.get("/api/service-photos/{offer_id}")
+def service_photo(offer_id: int, db: Session = Depends(get_db)):
+    offer = db.get(ProviderServiceOffer, offer_id)
+    if not offer or not offer.photo_path:
+        raise HTTPException(404, "Service photo not found")
+    path = os.path.join(UPLOADS, offer.photo_path)
+    if not os.path.isfile(path):
+        raise HTTPException(404, "Service photo is no longer available")
+    return FileResponse(path, filename=offer.photo_filename)
 
 @router.post("/api/provider/services")
 def provider_service(service_id: int = Form(...), description: str = Form(""), file: UploadFile = File(...),
