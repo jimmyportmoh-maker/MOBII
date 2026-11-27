@@ -290,7 +290,7 @@ def mpesa_callback(payload: dict, db: Session = Depends(get_db)):
         headers={"Authorization": "Basic " + base64.b64encode((key + ":" + secret).encode()).decode()})
     access = token.get("access_token")
     if not access: return {"ResultCode": 0, "ResultDesc": "Awaiting payment verification"}
-    shortcode = os.getenv("MPESA_SHORTCODE"); stamp = datetime.now().strftime("%Y%m%d%H%M%S")
+    shortcode = os.getenv("MPESA_SHORTCODE"); stamp = datetime.now(ZoneInfo("Africa/Nairobi")).strftime("%Y%m%d%H%M%S")
     password = base64.b64encode((shortcode + os.getenv("MPESA_PASSKEY") + stamp).encode()).decode()
     query = mpesa_request(root + "/mpesa/stkpushquery/v1/query",
         {"BusinessShortCode": shortcode, "Password": password, "Timestamp": stamp, "CheckoutRequestID": checkout},
