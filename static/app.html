@@ -5,7 +5,11 @@
 header{display:flex;justify-content:space-between;align-items:center;padding:12px 16px;background:var(--card);border-bottom:1px solid var(--line)}
 .w{max-width:760px;margin:0 auto;padding:14px}.c{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px;margin:10px 0}
 input,select,button,textarea{padding:9px;border:1px solid var(--line);border-radius:6px;background:var(--card);color:var(--ink);font:inherit;margin:3px 0;max-width:100%}
-button{background:var(--pri);color:#fff;border:0;cursor:pointer}button.d{background:#c0392b}button.l{background:none;color:var(--pri);border:1px solid var(--pri)}
+button{background:var(--pri);color:#fff;border:0;cursor:pointer}
+.customer-form{background:#eff6ff;border:1px solid #bfdbfe;border-top:4px solid #2563eb;color:#172554}
+.customer-form input,.customer-form select,.customer-form textarea{background:#fff;border-color:#93c5fd;color:#172554}
+.customer-form button{background:#2563eb}
+.customer-form button:hover{background:#1d4ed8}button.d{background:#c0392b}button.l{background:none;color:var(--pri);border:1px solid var(--pri)}
 .t{background:var(--bg);padding:2px 8px;border-radius:10px;font-size:13px;border:1px solid var(--line)}label{display:block;margin:2px 0}
 </style></head><body>
 <header><b>MOBI HUB</b><span id="who"></span></header><div class="w" id="view"></div>
@@ -50,7 +54,7 @@ function serviceOptions(items){
 // ---------- customer
 async function customer(){
  const [sv,my]=await Promise.all([api('services'),api('bookings/mine')]);
- view.innerHTML=`<div class=c><h3>Request a service</h3><p>Choose what you need and describe the work. You will select a provider from your dashboard. No payment is required when submitting a request.</p>
+ view.innerHTML=`<div class="c customer-form"><h3>Request a service</h3><p>Choose what you need and describe the work. You will select a provider from your dashboard. No payment is required when submitting a request.</p>
  <label>Service</label><select id=sv><option value="">Choose a service…</option>${serviceOptions(sv)}</select><small>${sv.length} available services in the catalogue</small>
  <label>Preferred date and time (optional)</label><input id=dt type=datetime-local>
  <label>Describe what you need</label><textarea id=nt rows=3 style="width:100%" placeholder="Explain the work, location and any important details"></textarea><button onclick="book()">Submit service request</button></div>
