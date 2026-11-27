@@ -31,7 +31,16 @@ def view(db, b):
 @router.get("/api/me")
 def me(u: User = Depends(current_user)): return {"id": u.id, "name": u.name, "email": u.email, "role": u.role}
 @router.get("/api/services")
-def services(db: Session = Depends(get_db)): return [row(s) for s in db.query(Service).filter_by(active=True)]
+def services(db: Session = Depends(get_db)):
+    items = db.query(Service).filter_by(active=True).all()
+    result = []
+    for s in items:
+        item = row(s)
+        category = db.get(Category, s.category_id) if s.category_id else None
+        item["category_name"] = category.name if category else "Other services"
+        result.append(item)
+    result.sort(key=lambda x: (x["category_name"].lower(), x["name"].lower()))
+    return result
 @router.get("/api/escrow/instructions")
 def instructions(db: Session = Depends(get_db)):
     s = db.query(Setting).filter_by(key="escrow_instructions").first(); return s.value if s else ""
