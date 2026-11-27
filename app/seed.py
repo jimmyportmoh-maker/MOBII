@@ -28,30 +28,41 @@ CATALOGUE = {
 "Creative & media":"Graphic design,Branding,Printing,Publishing,Animation,Content creators,Advertising,Journalism,Social media",
 "Community & social":"Faith-based organizations,Community organizations,Funeral services,Childcare,Elderly care,Disability support,Social work",
 "Science & emerging":"Scientific research,Mining,Forestry,Fisheries,Telecommunications,Space technology,Emerging technologies"}
+
 def seed(db):
-    admin_email = os.getenv("ADMIN_EMAIL", "admin@mobihub.local").lower()
+    admin_email = os.getenv("ADMIN_EMAIL", "admin@mobihub.local").strip().lower()
     admin_password = os.getenv("ADMIN_PASSWORD")
 
-    admin = db.query(User).filter_by(role="super").first()
+    if not admin_password:
+        raise ValueError("ADMIN_PASSWORD must be configured")
 
+    admin = db.query(User).filter_by(role="super").first()
     if admin:
         admin.email = admin_email
-        if admin_password:
-            admin.password_hash = hash_pw(admin_password)
+        admin.password_hash = hash_pw(admin_password)
     else:
-        if not admin_password:
-            raise ValueError("ADMIN_PASSWORD must be configured")
-
         db.add(User(
             email=admin_email,
             name="Super Admin",
             role="super",
-            password_hash=hash_pw(james3325)
+            password_hash=hash_pw(admin_password)
         ))
+
     if not db.query(Category).first():
         for ind, subs in CATALOGUE.items():
-            p = Category(name=ind); db.add(p); db.flush()
-            for s in subs.split(","): db.add(Category(name=s.strip(), parent_id=p.id))
-    for k, v in {"countries":"KE,UG,TZ,RW,US,GB","currencies":"KES,USD,EUR,GBP","languages":"en,sw,fr","tax_pct":"16","escrow_instructions":"Pay the booking amount by M-Pesa to Paybill 000000 (edit this in Admin > Settings). Use your booking ref (e.g. MH-12) as account, then enter the M-Pesa confirmation code below. Funds stay in escrow until the job is done."}.items():
-        if not db.query(Setting).filter_by(key=k).first(): db.add(Setting(key=k, value=v))
+            p = Category(name=ind)
+            db.add(p)
+            db.flush()
+            for s in subs.split(","):
+                db.add(Category(name=s.strip(), parent_id=p.id))
+
+    for k, v in {
+        "countries": "KE,UG,TZ,RW,US,GB",
+        "currencies": "KES,USD,EUR,GBP",
+        "languages": "en,sw,fr",
+        "tax_pct": "16",
+        "escrow_instructions": "Pay the booking amount by M-Pesa to Paybill 000000 (edit this in Admin > Settings). Use your booking ref (e.g. MH-12) as account, then enter the M-Pesa confirmation code below. Funds stay in escrow until the job is done."
+    }.items():
+        if not db.query(Setting).filter_by(key=k).first():
+            db.add(Setting(key=k, value=v))
     db.commit()
