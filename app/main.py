@@ -64,31 +64,6 @@ def login(b: Login, db: Session = Depends(get_db)):
     if u.status != "active": raise HTTPException(403, "Account " + u.status)
     return {"token": make_token(u), "role": u.role, "name": u.name}
 
-@app.post("/api/auth/send-code")
-def send_email_code(b: SendEmailCode, db: Session = Depends(get_db)):
-    email = b.email.strip().lower()
-    if "@" not in email or "." not in email.rsplit("@", 1)[-1]:
-        raise HTTPException(400, "Enter a valid email address.")
-    if db.query(User).filter_by(email=email).first():
-        raise HTTPException(409, "Email already registered. Please sign in.")
-    challenge = db.query(EmailVerification).filter_by(email=email).first()
-    now = datetime.utcnow()
-    if challenge and challenge.sent_at and (now - challenge.sent_at).total_seconds() < 60:
-        raise HTTPException(429, "Please wait 60 seconds before requesting another code.")
-    code = f"{secrets.randbelow(1000000):06d}"
-    send_verification_email(email, code)
-    if not challenge:
-        challenge = EmailVerification(email=email, code_hash=email_code_hash(email, code),
-                                       expires_at=now + timedelta(minutes=10), sent_at=now, attempts=0)
-        db.add(challenge)
-    else:
-        challenge.code_hash = email_code_hash(email, code)
-        challenge.expires_at = now + timedelta(minutes=10)
-        challenge.sent_at = now
-        challenge.attempts = 0
-    db.commit()
-    return {"ok": True, "message": "A 6-digit verification code has been sent to your email."}
-
 @app.post("/api/auth/register")
 def register(b: Register, db: Session = Depends(get_db)):
     email = b.email.strip().lower()
