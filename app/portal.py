@@ -30,15 +30,15 @@ def send_provider_booking_email(provider_email, provider_name, customer, booking
     msg["From"] = sender
     msg["To"] = provider_email
     msg.set_content(
-        f"Hello {provider_name},\\n\\n"
-        f"You have received a new service booking request on MOBI HUB.\\n\\n"
-        f"Booking ID: {booking.id}\\n"
-        f"Service: {service.name if service else 'Service'}\\n"
-        f"Customer: {customer.name}\\n"
-        f"Customer email: {customer.email}\\n"
-        f"Customer phone: {customer.phone or 'Not provided'}\\n"
-        f"Preferred date/time: {booking.scheduled_at or 'Flexible'}\\n"
-        f"Work details: {booking.notes}\\n\\n"
+        f"Hello {provider_name},\n\n"
+        f"You have received a new service booking request on MOBI HUB.\n\n"
+        f"Booking ID: {booking.id}\n"
+        f"Service: {service.name if service else 'Service'}\n"
+        f"Customer: {customer.name}\n"
+        f"Customer email: {customer.email}\n"
+        f"Customer phone: {customer.phone or 'Not provided'}\n"
+        f"Preferred date/time: {booking.scheduled_at or 'Flexible'}\n"
+        f"Work details: {booking.notes}\n\n"
         "Sign in to your MOBI HUB provider dashboard to accept or decline this request."
     )
     try:
