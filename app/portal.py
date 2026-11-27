@@ -1,4 +1,4 @@
-import os, uuid
+import os, uuid, json, base64, urllib.request, urllib.error
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from fastapi.responses import FileResponse
@@ -23,7 +23,11 @@ def prov(db, u):
 def view(db, b):
     e = db.query(Escrow).filter_by(booking_id=b.id).first(); s = db.get(Service, b.service_id)
     p = db.get(ProviderProfile, b.provider_id) if b.provider_id else None
-    return {"booking": row(b), "escrow": row(e) if e else None, "service": s.name if s else "", "provider": p.business_name if p else ""}
+    pu = db.get(User, p.user_id) if p else None
+    payments = db.query(Payment).filter_by(booking_id=b.id).order_by(Payment.id.desc()).all()
+    return {"booking": row(b), "escrow": row(e) if e else None, "service": s.name if s else "",
+            "provider": p.business_name if p else "", "provider_phone": (p.payout_info or pu.phone or "") if p else "",
+            "payments": [row(x) for x in payments]}
 
 @router.get("/api/me")
 def me(u: User = Depends(current_user)): return {"id": u.id, "name": u.name, "email": u.email, "role": u.role}
@@ -80,27 +84,17 @@ def service_photo(offer_id: int, db: Session = Depends(get_db)):
     return FileResponse(path, filename=offer.photo_filename)
 
 @router.post("/api/provider/services")
-def provider_service(description: str = Form(...), file: UploadFile = File(...),
+def provider_service(service_id: int = Form(...), description: str = Form(...), file: UploadFile = File(...),
                      u: User = Depends(current_user), db: Session = Depends(get_db)):
     p = prov(db, u)
-    if p.verification_status != "approved":
-        raise HTTPException(403, "Your provider profile must be approved before you can publish services.")
-    if len(description.strip()) < 20:
-        raise HTTPException(400, "Describe your service in at least 20 characters.")
-    # Providers describe their own work; the platform uses one internal catalogue
-    # entry so customers can discover and book these custom listings.
-    s = db.query(Service).filter_by(name="Provider-described service").first()
-    if not s:
-        s = Service(name="Provider-described service", description="Services described by verified providers",
-                    provider_type="individual", booking_method="appointment", location_type="physical",
-                    price_type="quotation", price=0, currency="KES", active=True)
-        db.add(s); db.flush()
+    if p.verification_status != "approved": raise HTTPException(403, "Your provider profile must be approved before you can publish services.")
+    s = db.get(Service, service_id)
+    if not s or not s.active: raise HTTPException(404, "Choose an active catalogue service.")
+    if len(description.strip()) < 20: raise HTTPException(400, "Describe your service in at least 20 characters.")
     ext = os.path.splitext(file.filename or "")[1].lower()
-    if ext not in {".jpg", ".jpeg", ".png"}:
-        raise HTTPException(400, "Service photos must be JPG or PNG.")
+    if ext not in {".jpg", ".jpeg", ".png"}: raise HTTPException(400, "Service photos must be JPG or PNG.")
     data = file.file.read(MAXB + 1)
-    if len(data) > MAXB:
-        raise HTTPException(400, "Photo larger than 8 MB.")
+    if len(data) > MAXB: raise HTTPException(400, "Photo larger than 8 MB.")
     stored = uuid.uuid4().hex + ext
     with open(os.path.join(UPLOADS, stored), "wb") as f: f.write(data)
     offer = db.query(ProviderServiceOffer).filter_by(provider_id=p.id, service_id=s.id).first()
@@ -113,10 +107,11 @@ def provider_service(description: str = Form(...), file: UploadFile = File(...),
     else:
         db.add(ProviderServiceOffer(provider_id=p.id, service_id=s.id, description=description.strip(),
                                     photo_path=stored, photo_filename=os.path.basename(file.filename or "service-photo")))
-    db.flush()
-    p.service_ids = str(s.id)
+    ids = {x for x in (p.service_ids or "").split(",") if x}
+    ids.add(str(s.id)); p.service_ids = ",".join(sorted(ids, key=int))
     db.commit()
     return {"ok": True, "service_id": s.id}
+
 @router.post("/api/provider/documents")
 def upload_doc(doc_type: str = Form(...), expires_on: str = Form(""), file: UploadFile = File(...),
                u: User = Depends(current_user), db: Session = Depends(get_db)):
@@ -139,28 +134,160 @@ def providers(service_id: int, u: User = Depends(current_user), db: Session = De
         usr = db.get(User, p.user_id)
         if usr and usr.status == "active" and str(service_id) in (p.service_ids or "").split(","):
             offer = db.query(ProviderServiceOffer).filter_by(provider_id=p.id, service_id=service_id).first()
+            ratings = db.query(Review).join(Booking, Review.booking_id == Booking.id).filter(
+                Booking.provider_id == p.id, Review.hidden == False).all()
+            avg = round(sum(r.rating for r in ratings) / len(ratings), 2) if ratings else 0
             out.append({"id": p.id, "business_name": p.business_name, "service_area": p.service_area,
                         "address": p.address, "description": offer.description if offer else "",
-                        "photo_id": offer.id if offer else None,
-                        "phone": usr.phone, "email": usr.email})
+                        "photo_id": offer.id if offer else None, "rating": avg, "rating_count": len(ratings)})
+    out.sort(key=lambda x: (x["rating_count"] > 0, x["rating"], x["rating_count"]), reverse=True)
     return out
-class NewBooking(BaseModel): service_id: int; provider_id: int; scheduled_at: str; notes: str = ""; amount: float = 0
+
+class NewBooking(BaseModel):
+    service_id: int
+    scheduled_at: str = ""
+    notes: str = ""
+
 @router.post("/api/bookings")
 def book(b: NewBooking, u: User = Depends(current_user), db: Session = Depends(get_db)):
     if u.role != "customer": raise HTTPException(403, "Customers only")
-    s, p = db.get(Service, b.service_id), db.get(ProviderProfile, b.provider_id)
+    s = db.get(Service, b.service_id)
     if not s or not s.active: raise HTTPException(404, "Service unavailable")
-    if not p or p.verification_status != "approved" or str(s.id) not in (p.service_ids or "").split(","):
-        raise HTTPException(400, "Provider not available for this service")
-    amount = s.price if s.price > 0 else b.amount
-    if amount <= 0: raise HTTPException(400, "Enter an amount")
-    o = Booking(customer_id=u.id, provider_id=p.id, service_id=s.id, scheduled_at=b.scheduled_at, notes=b.notes); db.add(o); db.flush()
-    com = round(amount * s.commission_pct / 100, 2)
-    e = Escrow(booking_id=o.id, amount=amount, currency=s.currency, commission_pct=s.commission_pct, commission_amount=com, payout_amount=round(amount - com, 2))
-    db.add(e); db.flush(); log(db, e, u, "created"); db.commit(); return view(db, o)
+    if len(b.notes.strip()) < 5: raise HTTPException(400, "Please describe what service you need.")
+    o = Booking(customer_id=u.id, provider_id=None, service_id=s.id, scheduled_at=b.scheduled_at,
+                notes=b.notes.strip(), status="requested")
+    db.add(o); db.commit(); db.refresh(o)
+    return view(db, o)
+
 @router.get("/api/bookings/mine")
 def mine(u: User = Depends(current_user), db: Session = Depends(get_db)):
-    return [view(db, b) for b in db.query(Booking).filter_by(customer_id=u.id).order_by(Booking.id.desc())]
+    result = []
+    for b in db.query(Booking).filter_by(customer_id=u.id).order_by(Booking.id.desc()).all():
+        item = view(db, b)
+        if b.status == "requested" and not b.provider_id:
+            item["available_providers"] = providers(b.service_id, u, db)
+        result.append(item)
+    return result
+
+class ProviderChoice(BaseModel): provider_id: int
+@router.post("/api/bookings/{booking_id}/select-provider")
+def select_provider(booking_id: int, data: ProviderChoice, u: User = Depends(current_user), db: Session = Depends(get_db)):
+    b = db.get(Booking, booking_id)
+    if not b or b.customer_id != u.id: raise HTTPException(404, "Request not found")
+    if b.status != "requested" or b.provider_id: raise HTTPException(400, "This request is no longer awaiting provider selection.")
+    p = db.get(ProviderProfile, data.provider_id)
+    if not p or p.verification_status != "approved" or str(b.service_id) not in (p.service_ids or "").split(","):
+        raise HTTPException(400, "That provider does not offer the selected service.")
+    b.provider_id = p.id; b.status = "provider_selected"; db.commit()
+    return view(db, b)
+
+@router.post("/api/provider/bookings/{booking_id}/accept")
+def accept_request(booking_id: int, u: User = Depends(current_user), db: Session = Depends(get_db)):
+    p = prov(db, u); b = db.get(Booking, booking_id)
+    if not b or b.provider_id != p.id: raise HTTPException(404, "Request not found")
+    if b.status != "provider_selected": raise HTTPException(400, "This request is no longer awaiting your response.")
+    b.status = "confirmed"; db.commit(); return view(db, b)
+
+@router.post("/api/provider/bookings/{booking_id}/decline")
+def decline_request(booking_id: int, u: User = Depends(current_user), db: Session = Depends(get_db)):
+    p = prov(db, u); b = db.get(Booking, booking_id)
+    if not b or b.provider_id != p.id: raise HTTPException(404, "Request not found")
+    if b.status != "provider_selected": raise HTTPException(400, "This request is no longer awaiting your response.")
+    b.provider_id = None; b.status = "requested"; db.commit(); return view(db, b)
+
+@router.post("/api/provider/bookings/{booking_id}/complete")
+def complete_request(booking_id: int, u: User = Depends(current_user), db: Session = Depends(get_db)):
+    p = prov(db, u); b = db.get(Booking, booking_id)
+    if not b or b.provider_id != p.id: raise HTTPException(404, "Request not found")
+    if b.status != "confirmed": raise HTTPException(400, "Only accepted requests can be marked complete.")
+    b.status = "completed"; db.commit(); return view(db, b)
+
+def normalize_phone(value):
+    digits = "".join(ch for ch in (value or "") if ch.isdigit())
+    if digits.startswith("0") and len(digits) == 10: digits = "254" + digits[1:]
+    if digits.startswith("7") or digits.startswith("1"): digits = "254" + digits
+    if len(digits) != 12 or not digits.startswith("254"): raise HTTPException(400, "Use a valid Kenyan M-Pesa number, e.g. 07XXXXXXXX.")
+    return digits
+
+def mpesa_config():
+    required = ["MPESA_CONSUMER_KEY", "MPESA_CONSUMER_SECRET", "MPESA_SHORTCODE", "MPESA_PASSKEY", "MPESA_CALLBACK_URL"]
+    missing = [key for key in required if not os.getenv(key)]
+    if missing: raise HTTPException(503, "M-Pesa STK Push is not configured yet. Set the Daraja credentials and callback URL in Render.")
+    env = os.getenv("MPESA_ENV", "sandbox").lower()
+    return "https://api.safaricom.co.ke" if env == "production" else "https://sandbox.safaricom.co.ke"
+
+def mpesa_request(url, payload=None, headers=None):
+    data = json.dumps(payload).encode() if payload is not None else None
+    req = urllib.request.Request(url, data=data, headers=headers or {}, method="POST" if data else "GET")
+    try:
+        with urllib.request.urlopen(req, timeout=25) as response: return json.loads(response.read().decode())
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode(errors="replace")
+        raise HTTPException(502, "Safaricom request failed: " + detail[:350])
+    except Exception:
+        raise HTTPException(502, "Could not connect to Safaricom. Please try again.")
+
+class ManualPayment(BaseModel): amount: float; receipt: str
+class StkPayment(BaseModel): amount: float; phone: str
+
+@router.post("/api/bookings/{booking_id}/pay/send-money")
+def send_money(booking_id: int, data: ManualPayment, u: User = Depends(current_user), db: Session = Depends(get_db)):
+    b = db.get(Booking, booking_id)
+    if not b or b.customer_id != u.id: raise HTTPException(404, "Booking not found")
+    if b.status != "completed" or not b.provider_id: raise HTTPException(400, "Payment is available after the provider marks the work complete.")
+    if data.amount < 1 or data.amount > 250000: raise HTTPException(400, "Enter an amount from KSh 1 to KSh 250,000.")
+    receipt = data.receipt.strip().upper()
+    if len(receipt) < 8 or len(receipt) > 20: raise HTTPException(400, "Enter the M-Pesa confirmation code.")
+    if db.query(Payment).filter_by(reference=receipt).first(): raise HTTPException(409, "That M-Pesa code has already been submitted.")
+    db.add(Payment(booking_id=b.id, method="send_money", amount=round(data.amount, 2), currency="KES", reference=receipt, status="submitted"))
+    db.commit(); return {"ok": True, "status": "submitted", "message": "Payment submitted for verification. It will not show as paid until verified."}
+
+@router.post("/api/bookings/{booking_id}/pay/stk")
+def stk_pay(booking_id: int, data: StkPayment, u: User = Depends(current_user), db: Session = Depends(get_db)):
+    b = db.get(Booking, booking_id)
+    if not b or b.customer_id != u.id: raise HTTPException(404, "Booking not found")
+    if b.status != "completed" or not b.provider_id: raise HTTPException(400, "Payment is available after the provider marks the work complete.")
+    if data.amount < 1 or data.amount > 250000 or int(data.amount) != data.amount: raise HTTPException(400, "Enter a whole KSh amount from 1 to 250,000.")
+    phone = normalize_phone(data.phone); root = mpesa_config()
+    key, secret = os.getenv("MPESA_CONSUMER_KEY"), os.getenv("MPESA_CONSUMER_SECRET")
+    token = mpesa_request(root + "/oauth/v1/generate?grant_type=client_credentials",
+        headers={"Authorization": "Basic " + base64.b64encode((key + ":" + secret).encode()).decode()})
+    access = token.get("access_token")
+    if not access: raise HTTPException(502, "Safaricom did not return an access token.")
+    shortcode = os.getenv("MPESA_SHORTCODE"); stamp = datetime.now().strftime("%Y%m%d%H%M%S")
+    password = base64.b64encode((shortcode + os.getenv("MPESA_PASSKEY") + stamp).encode()).decode()
+    payload = {"BusinessShortCode": shortcode, "Password": password, "Timestamp": stamp,
+        "TransactionType": os.getenv("MPESA_TRANSACTION_TYPE", "CustomerPayBillOnline"),
+        "Amount": int(data.amount), "PartyA": phone, "PartyB": shortcode, "PhoneNumber": phone,
+        "CallBackURL": os.getenv("MPESA_CALLBACK_URL"), "AccountReference": "MOBI-" + str(b.id),
+        "TransactionDesc": "MOBI HUB service payment"}
+    result = mpesa_request(root + "/mpesa/stkpush/v1/processrequest", payload,
+        {"Authorization": "Bearer " + access, "Content-Type": "application/json"})
+    checkout = result.get("CheckoutRequestID")
+    if not checkout: raise HTTPException(502, result.get("errorMessage", "Safaricom did not accept the STK request."))
+    db.add(Payment(booking_id=b.id, method="mpesa_stk", amount=float(data.amount), currency="KES",
+                   reference="STK:" + checkout, status="pending"))
+    db.commit()
+    return {"ok": True, "status": "pending", "message": "STK Push sent. Complete the prompt on your phone."}
+
+@router.post("/api/payments/mpesa/callback")
+def mpesa_callback(payload: dict, db: Session = Depends(get_db)):
+    callback = payload.get("Body", {}).get("stkCallback", {})
+    checkout = callback.get("CheckoutRequestID")
+    if not checkout: return {"ResultCode": 0, "ResultDesc": "Accepted"}
+    payment = db.query(Payment).filter(Payment.reference.like("STK:" + checkout + "%")).first()
+    if not payment: return {"ResultCode": 0, "ResultDesc": "Unknown checkout"}
+    if callback.get("ResultCode") == 0:
+        items = callback.get("CallbackMetadata", {}).get("Item", [])
+        meta = {x.get("Name"): x.get("Value") for x in items}
+        if int(meta.get("Amount", 0)) == int(payment.amount):
+            payment.reference = "STK:" + checkout + ":" + str(meta.get("MpesaReceiptNumber", ""))
+            payment.status = "paid"
+        else: payment.status = "failed"
+    else: payment.status = "failed"
+    db.commit()
+    return {"ResultCode": 0, "ResultDesc": "Accepted"}
+
 
 # ---- Escrow transitions
 class Ref(BaseModel): ref: str = ""; note: str = ""
