@@ -1,6 +1,4 @@
-import os, uuid, json, base64, urllib.request, urllib.error
-from datetime import datetime
-from zoneinfo import ZoneInfo
+import os, uuid
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
@@ -210,26 +208,7 @@ def normalize_phone(value):
     if len(digits) != 12 or not digits.startswith("254"): raise HTTPException(400, "Use a valid Kenyan M-Pesa number, e.g. 07XXXXXXXX.")
     return digits
 
-def mpesa_config():
-    required = ["MPESA_CONSUMER_KEY", "MPESA_CONSUMER_SECRET", "MPESA_SHORTCODE", "MPESA_PASSKEY", "MPESA_CALLBACK_URL"]
-    missing = [key for key in required if not os.getenv(key)]
-    if missing: raise HTTPException(503, "M-Pesa STK Push is not configured yet. Set the Daraja credentials and callback URL in Render.")
-    env = os.getenv("MPESA_ENV", "sandbox").lower()
-    return "https://api.safaricom.co.ke" if env == "production" else "https://sandbox.safaricom.co.ke"
-
-def mpesa_request(url, payload=None, headers=None):
-    data = json.dumps(payload).encode() if payload is not None else None
-    req = urllib.request.Request(url, data=data, headers=headers or {}, method="POST" if data else "GET")
-    try:
-        with urllib.request.urlopen(req, timeout=25) as response: return json.loads(response.read().decode())
-    except urllib.error.HTTPError as exc:
-        detail = exc.read().decode(errors="replace")
-        raise HTTPException(502, "Safaricom request failed: " + detail[:350])
-    except Exception:
-        raise HTTPException(502, "Could not connect to Safaricom. Please try again.")
-
 class ManualPayment(BaseModel): amount: float; receipt: str
-class StkPayment(BaseModel): amount: float; phone: str
 
 @router.post("/api/bookings/{booking_id}/pay/send-money")
 def send_money(booking_id: int, data: ManualPayment, u: User = Depends(current_user), db: Session = Depends(get_db)):
@@ -270,40 +249,6 @@ def stk_pay(booking_id: int, data: StkPayment, u: User = Depends(current_user), 
                    reference="STK:" + checkout, status="pending"))
     db.commit()
     return {"ok": True, "status": "pending", "message": "STK Push sent. Complete the prompt on your phone."}
-
-@router.post("/api/payments/mpesa/callback")
-def mpesa_callback(payload: dict, db: Session = Depends(get_db)):
-    callback = payload.get("Body", {}).get("stkCallback", {})
-    checkout = callback.get("CheckoutRequestID")
-    if not checkout: return {"ResultCode": 0, "ResultDesc": "Accepted"}
-    payment = db.query(Payment).filter(Payment.reference.like("STK:" + checkout + "%")).first()
-    if not payment: return {"ResultCode": 0, "ResultDesc": "Unknown checkout"}
-    if callback.get("ResultCode") != 0:
-        payment.status = "failed"
-        db.commit()
-        return {"ResultCode": 0, "ResultDesc": "Accepted"}
-    # Confirm successful callbacks with Safaricom's server-side STK query before
-    # changing the payment to paid; callback data alone is not trusted.
-    root = mpesa_config()
-    key, secret = os.getenv("MPESA_CONSUMER_KEY"), os.getenv("MPESA_CONSUMER_SECRET")
-    token = mpesa_request(root + "/oauth/v1/generate?grant_type=client_credentials",
-        headers={"Authorization": "Basic " + base64.b64encode((key + ":" + secret).encode()).decode()})
-    access = token.get("access_token")
-    if not access: return {"ResultCode": 0, "ResultDesc": "Awaiting payment verification"}
-    shortcode = os.getenv("MPESA_SHORTCODE"); stamp = datetime.now(ZoneInfo("Africa/Nairobi")).strftime("%Y%m%d%H%M%S")
-    password = base64.b64encode((shortcode + os.getenv("MPESA_PASSKEY") + stamp).encode()).decode()
-    query = mpesa_request(root + "/mpesa/stkpushquery/v1/query",
-        {"BusinessShortCode": shortcode, "Password": password, "Timestamp": stamp, "CheckoutRequestID": checkout},
-        {"Authorization": "Bearer " + access, "Content-Type": "application/json"})
-    if str(query.get("ResponseCode")) != "0" or str(query.get("ResultCode")) != "0":
-        return {"ResultCode": 0, "ResultDesc": "Awaiting payment verification"}
-    items = callback.get("CallbackMetadata", {}).get("Item", [])
-    meta = {x.get("Name"): x.get("Value") for x in items}
-    if int(meta.get("Amount", 0)) == int(payment.amount) and meta.get("MpesaReceiptNumber"):
-        payment.reference = "STK:" + checkout + ":" + str(meta["MpesaReceiptNumber"])
-        payment.status = "paid"
-        db.commit()
-    return {"ResultCode": 0, "ResultDesc": "Accepted"}
 
 # ---- Escrow transitions
 class Ref(BaseModel): ref: str = ""; note: str = ""
