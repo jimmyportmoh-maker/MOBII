@@ -12,7 +12,7 @@ button{background:var(--pri);color:#fff;border:0;cursor:pointer}button.d{backgro
 <script>
 let T=localStorage.mhp;const $=i=>document.getElementById(i),view=$('view');
 const h=s=>String(s??'').replace(/[&<>"']/g,c=>'&#'+c.charCodeAt(0)+';');
-const ST={requested:'Choose a provider',provider_selected:'Waiting for provider',confirmed:'Provider accepted',completed:'Work completed – payment due',cancelled:'Cancelled',awaiting_payment:'Awaiting payment',payment_submitted:'Payment being checked',funded:'Paid – held in escrow',delivered:'Delivered – awaiting approval',approved:'Approved – payout pending',disputed:'Disputed – under review',released:'Completed – provider paid',refunded:'Refunded',pending:'STK prompt sent',submitted:'Send Money submitted for verification',paid:'Paid',failed:'Payment failed'};
+const ST={requested:'Choose a provider',provider_selected:'Waiting for provider',confirmed:'Provider accepted',completed:'Work completed – payment due',cancelled:'Cancelled',awaiting_payment:'Awaiting payment',payment_submitted:'Payment being checked',funded:'Paid – held in escrow',delivered:'Delivered – awaiting approval',approved:'Approved – payout pending',disputed:'Disputed – under review',released:'Completed – provider paid',refunded:'Refunded'};
 async function api(p,m='GET',b,form){let hd={};if(T)hd.Authorization='Bearer '+T;if(!form)hd['Content-Type']='application/json';
 let r=await fetch('/api/'+p,{method:m,headers:hd,body:form?b:b?JSON.stringify(b):undefined});let d=await r.json().catch(()=>({}));
 if(!r.ok){alert(typeof d.detail=='string'?d.detail:'Check your input');return null}return d}
@@ -53,10 +53,10 @@ function customerCard(v){
   x+=`<p><b>${h(v.provider)}</b> marked the work complete. Confirm the agreed amount before paying.</p><p>Provider M-Pesa number: <b>${h(v.provider_phone||'Ask provider to confirm their M-Pesa number')}</b></p>`;
   if(last&&last.status==='paid')x+=`<p><span class=t>Payment confirmed: ${h(last.reference||'M-Pesa')}</span></p>`;
   else if(last&&last.status==='submitted')x+=`<p><span class=t>Send Money code submitted. Waiting for finance verification.</span></p>`;
-  else if(last&&last.status==='pending')x+=`<p><span class=t>STK prompt sent. Complete it on your phone, then refresh this page.</span></p>`;
-  else if(last&&last.status==='failed')x+=`<p><span class=t>Payment failed or was cancelled. You can try again.</span></p>`;
-  if(!last||last.status==='failed')x+=`<div class=c><h4>Pay using M-Pesa</h4><label>Amount (KSh)</label><input id="amt${b.id}" type=number min=1 step=1 placeholder="Agreed amount"><label>Phone number for STK Push</label><input id="ph${b.id}" placeholder="07XXXXXXXX"><p><small>STK Push is collected through MOBI HUB's configured business shortcode. Provider payout is handled separately by the finance team. To pay the provider directly, use Send Money below.</small></p><button onclick="payStk(${b.id})">Pay with STK Push</button><hr><p>Or send money manually to the provider's M-Pesa number shown above. After paying, enter the M-Pesa confirmation code below.</p><label>M-Pesa confirmation code</label><input id="ref${b.id}" placeholder="e.g. QAB12CD34E"><button class=l onclick="paySend(${b.id})">I paid using Send Money</button></div>`;
+  if(!last||last.status==='failed')x+=`<div class=c><h4>Pay using M-Pesa Send Money</h4><p>Send the agreed amount to the provider's M-Pesa number above, then enter the confirmation code from your M-Pesa message.</p><label>Amount (KSh)</label><input id="amt${b.id}" type=number min=1 step=1 placeholder="Agreed amount"><label>M-Pesa confirmation code</label><input id="ref${b.id}" placeholder="e.g. QAB12CD34E"><button class=l onclick="paySend(${b.id})">Submit Send Money payment</button></div>`;
   x+=`<button class=l onclick="customer()">Refresh payment status</button>`;
+ }
+
  }
  if(last&&b.status!=='completed')x+=`<p>Payment: ${h(ST[last.status]||last.status)}</p>`;
  return x+'</div>';
@@ -66,12 +66,6 @@ async function paySend(id){
  const amount=+$('amt'+id).value, receipt=$('ref'+id).value.trim();
  if(!amount||!receipt)return alert('Enter the agreed amount and M-Pesa confirmation code.');
  const d=await api(`bookings/${id}/pay/send-money`,'POST',{amount,receipt});
- if(d){alert(d.message);customer();}
-}
-async function payStk(id){
- const amount=+$('amt'+id).value, phone=$('ph'+id).value.trim();
- if(!amount||!phone)return alert('Enter the amount and your M-Pesa phone number.');
- const d=await api(`bookings/${id}/pay/stk`,'POST',{amount,phone});
  if(d){alert(d.message);customer();}
 }
 // ---------- provider
