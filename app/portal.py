@@ -61,7 +61,7 @@ def provider_me(u: User = Depends(current_user), db: Session = Depends(get_db)):
         item["customer_phone"] = customer.phone if customer else ""
         item["customer_email"] = customer.email if customer else ""
         job_rows.append(item)
-    return {"profile": row(p), "provider_details": {"name": usr.name, "email": usr.email, "phone": usr.phone}, "doc_types": DOC_TYPES, "jobs": job_rows,
+    return {"profile": row(p), "profile_photo_url": f"/api/provider-photos/{p.id}" if p.profile_photo_path else "", "provider_details": {"name": usr.name, "email": usr.email, "phone": usr.phone}, "doc_types": DOC_TYPES, "jobs": job_rows,
             "docs": [{"id": d.id, "doc_type": d.doc_type, "filename": d.filename, "created_at": str(d.created_at)} for d in docs],
             "offers": [{"id": o.id, "service_id": o.service_id, "service": db.get(Service, o.service_id).name if db.get(Service, o.service_id) else "", "description": o.description, "photo_filename": o.photo_filename} for o in offers]}
 class ProfileIn(BaseModel):
@@ -80,6 +80,37 @@ def patch_me(b: ProfileIn, u: User = Depends(current_user), db: Session = Depend
     p.verification_status = "under_review"
     db.commit(); return row(p)
 
+
+@router.post("/api/provider/profile-photo")
+def upload_provider_profile_photo(file: UploadFile = File(...), u: User = Depends(current_user), db: Session = Depends(get_db)):
+    p = prov(db, u)
+    ext = os.path.splitext(file.filename or "")[1].lower()
+    if ext not in {".jpg", ".jpeg", ".png"}:
+        raise HTTPException(400, "Profile photos must be JPG or PNG.")
+    data = file.file.read(MAXB + 1)
+    if len(data) > MAXB:
+        raise HTTPException(400, "Photo larger than 8 MB.")
+    stored = uuid.uuid4().hex + ext
+    with open(os.path.join(UPLOADS, stored), "wb") as f:
+        f.write(data)
+    old_path = p.profile_photo_path
+    p.profile_photo_path = stored
+    p.profile_photo_filename = os.path.basename(file.filename or "profile-photo")
+    db.commit()
+    if old_path:
+        try: os.remove(os.path.join(UPLOADS, old_path))
+        except OSError: pass
+    return {"ok": True, "photo_url": f"/api/provider-photos/{p.id}"}
+
+@router.get("/api/provider-photos/{provider_id}")
+def provider_profile_photo(provider_id: int, db: Session = Depends(get_db)):
+    p = db.get(ProviderProfile, provider_id)
+    if not p or p.verification_status != "approved" or not p.profile_photo_path:
+        raise HTTPException(404, "Provider profile photo not found")
+    path = os.path.join(UPLOADS, p.profile_photo_path)
+    if not os.path.isfile(path):
+        raise HTTPException(404, "Provider profile photo is unavailable")
+    return FileResponse(path, filename=p.profile_photo_filename or "provider-profile-photo")
 
 @router.get("/api/service-photos/{offer_id}")
 def service_photo(offer_id: int, db: Session = Depends(get_db)):
