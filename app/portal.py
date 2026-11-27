@@ -12,6 +12,7 @@ UPLOADS = os.path.join(os.path.dirname(__file__), "..", "private_uploads")
 os.makedirs(UPLOADS, exist_ok=True)
 DOC_TYPES = ["National ID", "Passport", "Selfie with ID", "Business registration", "Professional licence", "Other"]
 ALLOWED, MAXB = {".pdf", ".jpg", ".jpeg", ".png"}, 8 * 1024 * 1024
+PROFILE_MAXB = 50 * 1024 * 1024
 def row(o): return {c.name: getattr(o, c.name) for c in o.__table__.columns if c.name != "password_hash"}
 def log(db, e, u, event, note=""): db.add(EscrowEvent(escrow_id=e.id, actor_id=u.id, event=event, note=note))
 def audit(db, u, action, tid, detail=""): db.add(AuditLog(admin_id=u.id, action=action, resource="escrow", target_id=tid, detail=detail))
@@ -87,9 +88,9 @@ def upload_provider_profile_photo(file: UploadFile = File(...), u: User = Depend
     ext = os.path.splitext(file.filename or "")[1].lower()
     if ext not in {".jpg", ".jpeg", ".png"}:
         raise HTTPException(400, "Profile photos must be JPG or PNG.")
-    data = file.file.read(MAXB + 1)
-    if len(data) > MAXB:
-        raise HTTPException(400, "Photo larger than 8 MB.")
+    data = file.file.read(PROFILE_MAXB + 1)
+    if len(data) > PROFILE_MAXB:
+        raise HTTPException(400, "Profile photo larger than 50 MB.")
     stored = uuid.uuid4().hex + ext
     with open(os.path.join(UPLOADS, stored), "wb") as f:
         f.write(data)
