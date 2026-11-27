@@ -38,15 +38,58 @@ def provider_me(u: User = Depends(current_user), db: Session = Depends(get_db)):
     p = prov(db, u)
     docs = db.query(VerificationDoc).filter_by(provider_id=p.id).all()
     jobs = db.query(Booking).filter_by(provider_id=p.id).order_by(Booking.id.desc()).all()
+    offers = db.query(ProviderServiceOffer).filter_by(provider_id=p.id).all()
     return {"profile": row(p), "doc_types": DOC_TYPES, "jobs": [view(db, b) for b in jobs],
-            "docs": [{"id": d.id, "doc_type": d.doc_type, "filename": d.filename, "created_at": str(d.created_at)} for d in docs]}
+            "docs": [{"id": d.id, "doc_type": d.doc_type, "filename": d.filename, "created_at": str(d.created_at)} for d in docs],
+            "offers": [{"id": o.id, "service_id": o.service_id, "service": db.get(Service, o.service_id).name if db.get(Service, o.service_id) else "", "description": o.description, "photo_filename": o.photo_filename} for o in offers]}
 class ProfileIn(BaseModel):
     business_name: str = ""; address: str = ""; service_area: str = ""; payout_info: str = ""; service_ids: list[int] = []
 @router.patch("/api/provider/me")
 def patch_me(b: ProfileIn, u: User = Depends(current_user), db: Session = Depends(get_db)):
     p = prov(db, u)
-    p.business_name, p.address, p.service_area, p.payout_info = b.business_name, b.address, b.service_area, b.payout_info
-    p.service_ids = ",".join(map(str, b.service_ids)); db.commit(); return row(p)
+    if p.verification_status == "approved":
+        raise HTTPException(403, "Your profile is already verified. Manage your service listings below.")
+    if not b.business_name.strip() or not b.address.strip() or not b.service_area.strip() or not b.payout_info.strip():
+        raise HTTPException(400, "Complete business name, address, service area and payout details.")
+    types = {d.doc_type for d in db.query(VerificationDoc).filter_by(provider_id=p.id)}
+    if not types & {"National ID", "Passport"}:
+        raise HTTPException(400, "Upload your National ID or Passport before submitting your profile.")
+    p.business_name, p.address, p.service_area, p.payout_info = b.business_name.strip(), b.address.strip(), b.service_area.strip(), b.payout_info.strip()
+    p.verification_status = "under_review"
+    db.commit(); return row(p)
+
+@router.post("/api/provider/services")
+def provider_service(service_id: int = Form(...), description: str = Form(""), file: UploadFile = File(...),
+                     u: User = Depends(current_user), db: Session = Depends(get_db)):
+    p = prov(db, u)
+    if p.verification_status != "approved":
+        raise HTTPException(403, "Your provider profile must be approved before you can publish services.")
+    s = db.get(Service, service_id)
+    if not s or not s.active:
+        raise HTTPException(404, "Choose an active service.")
+    ext = os.path.splitext(file.filename or "")[1].lower()
+    if ext not in {".jpg", ".jpeg", ".png"}:
+        raise HTTPException(400, "Service photos must be JPG or PNG.")
+    data = file.file.read(MAXB + 1)
+    if len(data) > MAXB:
+        raise HTTPException(400, "Photo larger than 8 MB.")
+    stored = uuid.uuid4().hex + ext
+    with open(os.path.join(UPLOADS, stored), "wb") as f: f.write(data)
+    offer = db.query(ProviderServiceOffer).filter_by(provider_id=p.id, service_id=s.id).first()
+    if offer:
+        old_path = offer.photo_path
+        offer.description, offer.photo_path, offer.photo_filename = description, stored, os.path.basename(file.filename or "service-photo")
+        if old_path:
+            try: os.remove(os.path.join(UPLOADS, old_path))
+            except OSError: pass
+    else:
+        db.add(ProviderServiceOffer(provider_id=p.id, service_id=s.id, description=description,
+                                    photo_path=stored, photo_filename=os.path.basename(file.filename or "service-photo")))
+    db.flush()
+    p.service_ids = ",".join(str(x.service_id) for x in db.query(ProviderServiceOffer).filter_by(provider_id=p.id).all())
+    db.commit()
+    return {"ok": True, "service_id": s.id}
+
 @router.post("/api/provider/documents")
 def upload_doc(doc_type: str = Form(...), expires_on: str = Form(""), file: UploadFile = File(...),
                u: User = Depends(current_user), db: Session = Depends(get_db)):
@@ -59,7 +102,6 @@ def upload_doc(doc_type: str = Form(...), expires_on: str = Form(""), file: Uplo
     stored = uuid.uuid4().hex + ext
     with open(os.path.join(UPLOADS, stored), "wb") as f: f.write(data)
     db.add(VerificationDoc(provider_id=p.id, doc_type=doc_type, filename=os.path.basename(file.filename), stored_path=stored, expires_on=expires_on))
-    if p.verification_status in ("pending", "more_info"): p.verification_status = "under_review"
     db.commit(); return {"ok": True}
 
 # ---- Customer
