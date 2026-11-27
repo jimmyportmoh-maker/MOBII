@@ -1,5 +1,4 @@
-import os, uuid, smtplib
-from email.message import EmailMessage
+import os, uuid
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
@@ -18,38 +17,6 @@ def row(o): return {c.name: getattr(o, c.name) for c in o.__table__.columns if c
 def log(db, e, u, event, note=""): db.add(EscrowEvent(escrow_id=e.id, actor_id=u.id, event=event, note=note))
 def audit(db, u, action, tid, detail=""): db.add(AuditLog(admin_id=u.id, action=action, resource="escrow", target_id=tid, detail=detail))
 
-def send_provider_booking_email(provider_email, provider_name, customer, booking, service):
-    host = os.getenv("SMTP_HOST", "").strip()
-    username = os.getenv("SMTP_USER", "").strip()
-    password = os.getenv("SMTP_PASSWORD", "")
-    sender = os.getenv("SMTP_FROM", username).strip()
-    if not all((host, username, password, sender, provider_email)):
-        return False
-    msg = EmailMessage()
-    msg["Subject"] = f"New MOBI HUB booking request #{booking.id}"
-    msg["From"] = sender
-    msg["To"] = provider_email
-    msg.set_content(
-        f"Hello {provider_name},\n\n"
-        f"You have received a new service booking request on MOBI HUB.\n\n"
-        f"Booking ID: {booking.id}\n"
-        f"Service: {service.name if service else 'Service'}\n"
-        f"Customer: {customer.name}\n"
-        f"Customer email: {customer.email}\n"
-        f"Customer phone: {customer.phone or 'Not provided'}\n"
-        f"Preferred date/time: {booking.scheduled_at or 'Flexible'}\n"
-        f"Work details: {booking.notes}\n\n"
-        "Sign in to your MOBI HUB provider dashboard to accept or decline this request."
-    )
-    try:
-        with smtplib.SMTP(host, int(os.getenv("SMTP_PORT", "587")), timeout=15) as server:
-            server.starttls()
-            server.login(username, password)
-            server.send_message(msg)
-        return True
-    except Exception as exc:
-        print(f"Provider booking email notification failed: {exc}")
-        return False
 
 def prov(db, u):
     p = db.query(ProviderProfile).filter_by(user_id=u.id).first()
@@ -256,19 +223,7 @@ def select_provider(booking_id: int, data: ProviderChoice, u: User = Depends(cur
     b.provider_id = p.id
     b.status = "provider_selected"
     db.commit()
-    customer = db.get(User, b.customer_id)
-    provider_user = db.get(User, p.user_id)
-    service = db.get(Service, b.service_id)
-    email_sent = send_provider_booking_email(
-        provider_user.email if provider_user else "",
-        p.business_name,
-        customer,
-        b,
-        service
-    ) if customer and provider_user else False
-    result = view(db, b)
-    result["email_sent"] = email_sent
-    return result
+    return view(db, b)
 
 @router.post("/api/provider/bookings/{booking_id}/accept")
 def accept_request(booking_id: int, u: User = Depends(current_user), db: Session = Depends(get_db)):
