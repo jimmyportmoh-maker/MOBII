@@ -70,3 +70,10 @@ class Escrow(Base):  # manual escrow: customer pays platform off-platform, finan
 class EscrowEvent(Base):
     __tablename__="escrow_events"; id=pk()
     escrow_id=Column(Integer,ForeignKey("escrow.id")); actor_id=Column(Integer); event=Column(String(40)); note=Column(Text,default=""); created_at=now()
+
+
+class ProviderServiceOffer(Base):
+    __tablename__="provider_service_offers"; id=pk()
+    provider_id=Column(Integer,ForeignKey("providers.id")); service_id=Column(Integer,ForeignKey("services.id"))
+    description=Column(Text,default=""); photo_path=Column(String(400)); photo_filename=Column(String(300))
+    created_at=now()
