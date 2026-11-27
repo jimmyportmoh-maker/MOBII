@@ -27,7 +27,7 @@ def view(db, b):
     pu = db.get(User, p.user_id) if p else None
     payments = db.query(Payment).filter_by(booking_id=b.id).order_by(Payment.id.desc()).all()
     return {"booking": row(b), "escrow": row(e) if e else None, "service": s.name if s else "",
-            "provider": p.business_name if p else "", "provider_phone": (p.payout_info or pu.phone or "") if p else "",
+            "provider": p.business_name if p else "", "provider_phone": (p.payout_info or pu.phone or "") if p and b.status == "completed" else "",
             "payments": [row(x) for x in payments]}
 
 @router.get("/api/me")
