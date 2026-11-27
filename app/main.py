@@ -4,7 +4,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy import func, inspect, text
 from .db import Base, engine, get_db, Session as SessionLocal
 from .models import *
 from .security import hash_pw, check_pw, make_token, current_user, require
