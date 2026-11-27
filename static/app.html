@@ -53,7 +53,7 @@ async function provider(){
  if(status==='approved'){
   view.innerHTML=`<div class=c><h3>Provider verified</h3><p>Your profile has been approved. You can now publish the services you offer and add photos.</p><p><b>Business:</b> ${h(p.business_name)}</p></div>
   <div class=c><h3>Publish a service</h3><label>Choose service</label><select id=offerService>${sv.map(s=>`<option value=${s.id}>${h(s.name)}</option>`).join('')}</select><label>Describe what you offer</label><textarea id=offerDescription rows=3 placeholder="Describe your service"></textarea><label>Service photo (JPG or PNG, max 8 MB)</label><input id=offerPhoto type=file accept=".jpg,.jpeg,.png"><button onclick="publishService()">Publish service</button></div>
-  <div class=c><h3>Your published services</h3>${offers.map(o=>`<div style="padding:8px 0;border-bottom:1px solid var(--line)"><b>${h(o.service)}</b><p>${h(o.description)}</p><small>Photo: ${h(o.photo_filename)}</small></div>`).join('')||'<p>You have not published any services yet.</p>'}</div>
+  <div class=c><h3>Your published services</h3>${offers.map(o=>`<div style="padding:8px 0;border-bottom:1px solid var(--line)"><b>${h(o.service)}</b><p>${h(o.description)}</p><img src="/api/service-photos/${o.id}" alt="Service photo" style="max-width:220px;max-height:160px;object-fit:cover;border-radius:8px"><p><small>${h(o.photo_filename)}</small></p></div>`).join('')||'<p>You have not published any services yet.</p>'}</div>
   <h3>My jobs</h3>${d.jobs.map(job).join('')||'<p>No jobs yet.</p>'}`;
   return;
  }
