@@ -57,7 +57,6 @@ function customerCard(v){
   x+=`<button class=l onclick="customer()">Refresh payment status</button>`;
  }
 
- }
  if(last&&b.status!=='completed')x+=`<p>Payment: ${h(ST[last.status]||last.status)}</p>`;
  return x+'</div>';
 }
