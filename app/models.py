@@ -80,11 +80,3 @@ class ProviderServiceOffer(Base):
     created_at=now()
 
 
-class EmailVerification(Base):
-    __tablename__ = "email_verifications"
-    id = pk()
-    email = Column(String(200), unique=True, index=True)
-    code_hash = Column(String(64))
-    expires_at = Column(DateTime)
-    sent_at = Column(DateTime, default=datetime.utcnow)
-    attempts = Column(Integer, default=0)
