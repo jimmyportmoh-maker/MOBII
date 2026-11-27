@@ -65,7 +65,7 @@ function customerCard(v){
  if(last&&b.status!=='completed')x+=`<p>Payment: ${h(ST[last.status]||last.status)}</p>`;
  return x+'</div>';
 }
-async function chooseProvider(id,pid){if(await api(`bookings/${id}/select-provider`,'POST',{provider_id:pid})){alert('Request sent to provider.');customer();}}
+async function chooseProvider(id,pid){const d=await api(`bookings/${id}/select-provider`,'POST',{provider_id:pid});if(d){alert(d.email_sent?'Request sent. An email notification was delivered to the provider.':'Request sent and saved. The provider can see it in their dashboard, but the email notification was not sent.');customer();}}
 async function paySend(id){
  const amount=+$('amt'+id).value, receipt=$('ref'+id).value.trim();
  if(!amount||!receipt)return alert('Enter the agreed amount and M-Pesa confirmation code.');
