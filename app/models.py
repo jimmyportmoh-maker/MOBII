@@ -78,3 +78,13 @@ class ProviderServiceOffer(Base):
     provider_id=Column(Integer,ForeignKey("providers.id")); service_id=Column(Integer,ForeignKey("services.id"))
     description=Column(Text,default=""); photo_path=Column(String(400)); photo_filename=Column(String(300))
     created_at=now()
+
+
+class EmailVerification(Base):
+    __tablename__ = "email_verifications"
+    id = pk()
+    email = Column(String(200), unique=True, index=True)
+    code_hash = Column(String(64))
+    expires_at = Column(DateTime)
+    sent_at = Column(DateTime, default=datetime.utcnow)
+    attempts = Column(Integer, default=0)
