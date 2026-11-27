@@ -201,13 +201,6 @@ def complete_request(booking_id: int, u: User = Depends(current_user), db: Sessi
     if b.status != "confirmed": raise HTTPException(400, "Only accepted requests can be marked complete.")
     b.status = "completed"; db.commit(); return view(db, b)
 
-def normalize_phone(value):
-    digits = "".join(ch for ch in (value or "") if ch.isdigit())
-    if digits.startswith("0") and len(digits) == 10: digits = "254" + digits[1:]
-    if digits.startswith("7") or digits.startswith("1"): digits = "254" + digits
-    if len(digits) != 12 or not digits.startswith("254"): raise HTTPException(400, "Use a valid Kenyan M-Pesa number, e.g. 07XXXXXXXX.")
-    return digits
-
 class ManualPayment(BaseModel): amount: float; receipt: str
 
 @router.post("/api/bookings/{booking_id}/pay/send-money")
@@ -221,34 +214,6 @@ def send_money(booking_id: int, data: ManualPayment, u: User = Depends(current_u
     if db.query(Payment).filter_by(reference=receipt).first(): raise HTTPException(409, "That M-Pesa code has already been submitted.")
     db.add(Payment(booking_id=b.id, method="send_money", amount=round(data.amount, 2), currency="KES", reference=receipt, status="submitted"))
     db.commit(); return {"ok": True, "status": "submitted", "message": "Payment submitted for verification. It will not show as paid until verified."}
-
-@router.post("/api/bookings/{booking_id}/pay/stk")
-def stk_pay(booking_id: int, data: StkPayment, u: User = Depends(current_user), db: Session = Depends(get_db)):
-    b = db.get(Booking, booking_id)
-    if not b or b.customer_id != u.id: raise HTTPException(404, "Booking not found")
-    if b.status != "completed" or not b.provider_id: raise HTTPException(400, "Payment is available after the provider marks the work complete.")
-    if data.amount < 1 or data.amount > 250000 or int(data.amount) != data.amount: raise HTTPException(400, "Enter a whole KSh amount from 1 to 250,000.")
-    phone = normalize_phone(data.phone); root = mpesa_config()
-    key, secret = os.getenv("MPESA_CONSUMER_KEY"), os.getenv("MPESA_CONSUMER_SECRET")
-    token = mpesa_request(root + "/oauth/v1/generate?grant_type=client_credentials",
-        headers={"Authorization": "Basic " + base64.b64encode((key + ":" + secret).encode()).decode()})
-    access = token.get("access_token")
-    if not access: raise HTTPException(502, "Safaricom did not return an access token.")
-    shortcode = os.getenv("MPESA_SHORTCODE"); stamp = datetime.now(ZoneInfo("Africa/Nairobi")).strftime("%Y%m%d%H%M%S")
-    password = base64.b64encode((shortcode + os.getenv("MPESA_PASSKEY") + stamp).encode()).decode()
-    payload = {"BusinessShortCode": shortcode, "Password": password, "Timestamp": stamp,
-        "TransactionType": os.getenv("MPESA_TRANSACTION_TYPE", "CustomerPayBillOnline"),
-        "Amount": int(data.amount), "PartyA": phone, "PartyB": shortcode, "PhoneNumber": phone,
-        "CallBackURL": os.getenv("MPESA_CALLBACK_URL"), "AccountReference": "MOBI-" + str(b.id),
-        "TransactionDesc": "MOBI HUB service payment"}
-    result = mpesa_request(root + "/mpesa/stkpush/v1/processrequest", payload,
-        {"Authorization": "Bearer " + access, "Content-Type": "application/json"})
-    checkout = result.get("CheckoutRequestID")
-    if not checkout: raise HTTPException(502, result.get("errorMessage", "Safaricom did not accept the STK request."))
-    db.add(Payment(booking_id=b.id, method="mpesa_stk", amount=float(data.amount), currency="KES",
-                   reference="STK:" + checkout, status="pending"))
-    db.commit()
-    return {"ok": True, "status": "pending", "message": "STK Push sent. Complete the prompt on your phone."}
 
 # ---- Escrow transitions
 class Ref(BaseModel): ref: str = ""; note: str = ""
