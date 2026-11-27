@@ -13,6 +13,13 @@ from .seed import seed
 UPLOADS = os.path.join(os.path.dirname(__file__), "..", "private_uploads")
 os.makedirs(UPLOADS, exist_ok=True)
 Base.metadata.create_all(engine)
+# Add profile-photo fields to existing provider tables without resetting existing data.
+with engine.begin() as conn:
+    existing = {c["name"] for c in inspect(engine).get_columns("providers")}
+    if "profile_photo_path" not in existing:
+        conn.execute(text("ALTER TABLE providers ADD COLUMN profile_photo_path VARCHAR(400) DEFAULT ''"))
+    if "profile_photo_filename" not in existing:
+        conn.execute(text("ALTER TABLE providers ADD COLUMN profile_photo_filename VARCHAR(300) DEFAULT ''"))
 with SessionLocal() as _s: seed(_s)
 app = FastAPI(title="Mobi Hub")
 
