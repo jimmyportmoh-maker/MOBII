@@ -277,17 +277,32 @@ def mpesa_callback(payload: dict, db: Session = Depends(get_db)):
     if not checkout: return {"ResultCode": 0, "ResultDesc": "Accepted"}
     payment = db.query(Payment).filter(Payment.reference.like("STK:" + checkout + "%")).first()
     if not payment: return {"ResultCode": 0, "ResultDesc": "Unknown checkout"}
-    if callback.get("ResultCode") == 0:
-        items = callback.get("CallbackMetadata", {}).get("Item", [])
-        meta = {x.get("Name"): x.get("Value") for x in items}
-        if int(meta.get("Amount", 0)) == int(payment.amount):
-            payment.reference = "STK:" + checkout + ":" + str(meta.get("MpesaReceiptNumber", ""))
-            payment.status = "paid"
-        else: payment.status = "failed"
-    else: payment.status = "failed"
-    db.commit()
+    if callback.get("ResultCode") != 0:
+        payment.status = "failed"
+        db.commit()
+        return {"ResultCode": 0, "ResultDesc": "Accepted"}
+    # Confirm successful callbacks with Safaricom's server-side STK query before
+    # changing the payment to paid; callback data alone is not trusted.
+    root = mpesa_config()
+    key, secret = os.getenv("MPESA_CONSUMER_KEY"), os.getenv("MPESA_CONSUMER_SECRET")
+    token = mpesa_request(root + "/oauth/v1/generate?grant_type=client_credentials",
+        headers={"Authorization": "Basic " + base64.b64encode((key + ":" + secret).encode()).decode()})
+    access = token.get("access_token")
+    if not access: return {"ResultCode": 0, "ResultDesc": "Awaiting payment verification"}
+    shortcode = os.getenv("MPESA_SHORTCODE"); stamp = datetime.now().strftime("%Y%m%d%H%M%S")
+    password = base64.b64encode((shortcode + os.getenv("MPESA_PASSKEY") + stamp).encode()).decode()
+    query = mpesa_request(root + "/mpesa/stkpushquery/v1/query",
+        {"BusinessShortCode": shortcode, "Password": password, "Timestamp": stamp, "CheckoutRequestID": checkout},
+        {"Authorization": "Bearer " + access, "Content-Type": "application/json"})
+    if str(query.get("ResponseCode")) != "0" or str(query.get("ResultCode")) != "0":
+        return {"ResultCode": 0, "ResultDesc": "Awaiting payment verification"}
+    items = callback.get("CallbackMetadata", {}).get("Item", [])
+    meta = {x.get("Name"): x.get("Value") for x in items}
+    if int(meta.get("Amount", 0)) == int(payment.amount) and meta.get("MpesaReceiptNumber"):
+        payment.reference = "STK:" + checkout + ":" + str(meta["MpesaReceiptNumber"])
+        payment.status = "paid"
+        db.commit()
     return {"ResultCode": 0, "ResultDesc": "Accepted"}
-
 
 # ---- Escrow transitions
 class Ref(BaseModel): ref: str = ""; note: str = ""
