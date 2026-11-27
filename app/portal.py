@@ -40,7 +40,16 @@ def provider_me(u: User = Depends(current_user), db: Session = Depends(get_db)):
     docs = db.query(VerificationDoc).filter_by(provider_id=p.id).all()
     jobs = db.query(Booking).filter_by(provider_id=p.id).order_by(Booking.id.desc()).all()
     offers = db.query(ProviderServiceOffer).filter_by(provider_id=p.id).all()
-    return {"profile": row(p), "doc_types": DOC_TYPES, "jobs": [view(db, b) for b in jobs],
+    usr = db.get(User, u.id)
+    job_rows = []
+    for b in jobs:
+        item = view(db, b)
+        customer = db.get(User, b.customer_id)
+        item["customer_name"] = customer.name if customer else "Customer"
+        item["customer_phone"] = customer.phone if customer else ""
+        item["customer_email"] = customer.email if customer else ""
+        job_rows.append(item)
+    return {"profile": row(p), "provider_details": {"name": usr.name, "email": usr.email, "phone": usr.phone}, "doc_types": DOC_TYPES, "jobs": job_rows,
             "docs": [{"id": d.id, "doc_type": d.doc_type, "filename": d.filename, "created_at": str(d.created_at)} for d in docs],
             "offers": [{"id": o.id, "service_id": o.service_id, "service": db.get(Service, o.service_id).name if db.get(Service, o.service_id) else "", "description": o.description, "photo_filename": o.photo_filename} for o in offers]}
 class ProfileIn(BaseModel):
@@ -71,14 +80,21 @@ def service_photo(offer_id: int, db: Session = Depends(get_db)):
     return FileResponse(path, filename=offer.photo_filename)
 
 @router.post("/api/provider/services")
-def provider_service(service_id: int = Form(...), description: str = Form(""), file: UploadFile = File(...),
+def provider_service(description: str = Form(...), file: UploadFile = File(...),
                      u: User = Depends(current_user), db: Session = Depends(get_db)):
     p = prov(db, u)
     if p.verification_status != "approved":
         raise HTTPException(403, "Your provider profile must be approved before you can publish services.")
-    s = db.get(Service, service_id)
-    if not s or not s.active:
-        raise HTTPException(404, "Choose an active service.")
+    if len(description.strip()) < 20:
+        raise HTTPException(400, "Describe your service in at least 20 characters.")
+    # Providers describe their own work; the platform uses one internal catalogue
+    # entry so customers can discover and book these custom listings.
+    s = db.query(Service).filter_by(name="Provider-described service").first()
+    if not s:
+        s = Service(name="Provider-described service", description="Services described by verified providers",
+                    provider_type="individual", booking_method="appointment", location_type="physical",
+                    price_type="quotation", price=0, currency="KES", active=True)
+        db.add(s); db.flush()
     ext = os.path.splitext(file.filename or "")[1].lower()
     if ext not in {".jpg", ".jpeg", ".png"}:
         raise HTTPException(400, "Service photos must be JPG or PNG.")
@@ -90,18 +106,17 @@ def provider_service(service_id: int = Form(...), description: str = Form(""), f
     offer = db.query(ProviderServiceOffer).filter_by(provider_id=p.id, service_id=s.id).first()
     if offer:
         old_path = offer.photo_path
-        offer.description, offer.photo_path, offer.photo_filename = description, stored, os.path.basename(file.filename or "service-photo")
+        offer.description, offer.photo_path, offer.photo_filename = description.strip(), stored, os.path.basename(file.filename or "service-photo")
         if old_path:
             try: os.remove(os.path.join(UPLOADS, old_path))
             except OSError: pass
     else:
-        db.add(ProviderServiceOffer(provider_id=p.id, service_id=s.id, description=description,
+        db.add(ProviderServiceOffer(provider_id=p.id, service_id=s.id, description=description.strip(),
                                     photo_path=stored, photo_filename=os.path.basename(file.filename or "service-photo")))
     db.flush()
-    p.service_ids = ",".join(str(x.service_id) for x in db.query(ProviderServiceOffer).filter_by(provider_id=p.id).all())
+    p.service_ids = str(s.id)
     db.commit()
     return {"ok": True, "service_id": s.id}
-
 @router.post("/api/provider/documents")
 def upload_doc(doc_type: str = Form(...), expires_on: str = Form(""), file: UploadFile = File(...),
                u: User = Depends(current_user), db: Session = Depends(get_db)):
@@ -123,7 +138,11 @@ def providers(service_id: int, u: User = Depends(current_user), db: Session = De
     for p in db.query(ProviderProfile).filter_by(verification_status="approved"):
         usr = db.get(User, p.user_id)
         if usr and usr.status == "active" and str(service_id) in (p.service_ids or "").split(","):
-            out.append({"id": p.id, "business_name": p.business_name, "service_area": p.service_area})
+            offer = db.query(ProviderServiceOffer).filter_by(provider_id=p.id, service_id=service_id).first()
+            out.append({"id": p.id, "business_name": p.business_name, "service_area": p.service_area,
+                        "address": p.address, "description": offer.description if offer else "",
+                        "photo_id": offer.id if offer else None,
+                        "phone": usr.phone, "email": usr.email})
     return out
 class NewBooking(BaseModel): service_id: int; provider_id: int; scheduled_at: str; notes: str = ""; amount: float = 0
 @router.post("/api/bookings")
