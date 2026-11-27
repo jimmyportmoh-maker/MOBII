@@ -18,9 +18,10 @@ let r=await fetch('/api/'+p,{method:m,headers:hd,body:form?b:b?JSON.stringify(b)
 if(!r.ok){alert(typeof d.detail=='string'?d.detail:'Check your input');return null}return d}
 function authView(){view.innerHTML=`<div class=c><h2>Sign in</h2><input id=le placeholder=Email><br><input id=lp type=password placeholder=Password><br><button onclick="login()">Sign in</button></div>
 <div class=c><h2>Create account</h2><select id=rr onchange="$('bn').style.display=this.value=='provider'?'':'none'"><option value=customer>I need a service (customer)</option><option value=provider>I offer services (provider)</option></select><br>
-<input id=rn placeholder="Full name"><br><input id=re placeholder=Email><br><input id=rph placeholder=Phone><br><input id=bn placeholder="Business name" style="display:none"><br><input id=rp type=password placeholder="Password (8+ chars)"><br><button onclick="reg()">Create account</button></div>`}
+<input id=rn placeholder="Full name"><br><input id=re type=email placeholder=Email><br><button class=l onclick="sendEmailCode()">Send verification code</button><br><input id=rc maxlength=6 inputmode=numeric placeholder="6-digit email code"><br><small>Enter the code sent to your email before creating your account.</small><br><input id=rph placeholder=Phone><br><input id=bn placeholder="Business name" style="display:none"><br><input id=rp type=password placeholder="Password (8+ chars)"><br><button onclick="reg()">Verify email &amp; create account</button></div>`}
 async function login(){let d=await api('auth/login','POST',{email:le.value,password:lp.value});if(d){T=localStorage.mhp=d.token;boot()}}
-async function reg(){let d=await api('auth/register','POST',{email:re.value,password:rp.value,name:rn.value,phone:rph.value,role:rr.value,business_name:bn.value});if(d){T=localStorage.mhp=d.token;boot()}}
+async function sendEmailCode(){const email=$('re').value.trim();if(!email)return alert('Enter your email address first.');const d=await api('auth/send-code','POST',{email});if(d)alert(d.message)}
+async function reg(){let d=await api('auth/register','POST',{email:re.value,code:rc.value,password:rp.value,name:rn.value,phone:rph.value,role:rr.value,business_name:bn.value});if(d){T=localStorage.mhp=d.token;boot()}}
 function out(){localStorage.removeItem('mhp');T=null;$('who').innerHTML='';authView()}
 async function boot(){if(!T)return authView();let m=await api('me');if(!m)return out();
 $('who').innerHTML=`${h(m.name)} (${m.role}) <button class=l onclick="out()">Sign out</button>`;
