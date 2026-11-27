@@ -1,5 +1,6 @@
 import os, uuid, json, base64, urllib.request, urllib.error
 from datetime import datetime
+from zoneinfo import ZoneInfo
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
@@ -254,7 +255,7 @@ def stk_pay(booking_id: int, data: StkPayment, u: User = Depends(current_user), 
         headers={"Authorization": "Basic " + base64.b64encode((key + ":" + secret).encode()).decode()})
     access = token.get("access_token")
     if not access: raise HTTPException(502, "Safaricom did not return an access token.")
-    shortcode = os.getenv("MPESA_SHORTCODE"); stamp = datetime.now().strftime("%Y%m%d%H%M%S")
+    shortcode = os.getenv("MPESA_SHORTCODE"); stamp = datetime.now(ZoneInfo("Africa/Nairobi")).strftime("%Y%m%d%H%M%S")
     password = base64.b64encode((shortcode + os.getenv("MPESA_PASSKEY") + stamp).encode()).decode()
     payload = {"BusinessShortCode": shortcode, "Password": password, "Timestamp": stamp,
         "TransactionType": os.getenv("MPESA_TRANSACTION_TYPE", "CustomerPayBillOnline"),
